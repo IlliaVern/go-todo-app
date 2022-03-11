@@ -2,6 +2,8 @@ module github.com/IlliaVern/go-todo-app
 
 go 1.17
 
+require github.com/lib/pq v1.10.4
+
 require (
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
