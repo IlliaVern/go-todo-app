@@ -1,23 +1,30 @@
 package handler
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
 
-func (handler *Handler) createList(ctx *gin.Context) {
+	"github.com/gin-gonic/gin"
+)
+
+func (handler *Handler) createList(c *gin.Context) {
+	id, _ := c.Get(userCtx)
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"id": id,
+	})
+}
+
+func (handler *Handler) getAllLists(c *gin.Context) {
 
 }
 
-func (handler *Handler) getAllLists(ctx *gin.Context) {
+func (handler *Handler) getListById(c *gin.Context) {
 
 }
 
-func (handler *Handler) getListById(ctx *gin.Context) {
+func (handler *Handler) updateList(c *gin.Context) {
 
 }
 
-func (handler *Handler) updateList(ctx *gin.Context) {
-
-}
-
-func (handler *Handler) deleteList(ctx *gin.Context) {
+func (handler *Handler) deleteList(c *gin.Context) {
 
 }
