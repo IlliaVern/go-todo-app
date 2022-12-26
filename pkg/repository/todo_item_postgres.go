@@ -22,7 +22,7 @@ func (r *TodoItemPostgres) Create(listId int, item todo.TodoItem) (int, error) {
 	}
 
 	var itemId int
-	createItemQuery := fmt.Sprintf(`INSERT INTO %s (title, description) VALUES ($1, $2) TURNING id`, todoItemsTable)
+	createItemQuery := fmt.Sprintf(`INSERT INTO %s (title, description) VALUES ($1, $2) RETURNING id`, todoItemsTable)
 	
 	row := tx.QueryRow(createItemQuery, item.Title, item.Description)
 	err = row.Scan(&itemId)
@@ -39,4 +39,17 @@ func (r *TodoItemPostgres) Create(listId int, item todo.TodoItem) (int, error) {
 	}
 
 	return itemId, tx.Commit()
+}
+
+func (r *TodoItemPostgres) GetAll(userId, listId int) ([]todo.TodoItem, error) {
+	var items []todo.TodoItem
+	query := fmt.Sprintf(`SELECT ti.title, ti.description, ti.done FROM %s ti
+						  INNER JOIN %s li ON li.item_id = ti.id
+						  INNER JOIN %s ul ON ul.list_id = li.list_id
+						  WHERE li.list_id = $1 AND ul.user_id = $2`,
+						  todoItemsTable, listsItemsTable, usersListsTable)
+	if err :=  r.db.Select(&items, query, listId, userId); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
