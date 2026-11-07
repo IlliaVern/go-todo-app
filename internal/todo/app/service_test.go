@@ -15,6 +15,8 @@ type memStore struct {
 	lists  map[int64]domain.List
 	items  map[int64]domain.Item
 	nextID int64
+	// conflicts makes the next N updates fail as if another writer won.
+	conflicts int
 }
 
 func newMemStore() *memStore {
@@ -26,7 +28,7 @@ type memItems struct{ *memStore }
 
 func (s memLists) Add(_ context.Context, l domain.List) (int64, error) {
 	s.nextID++
-	s.lists[s.nextID] = domain.RestoreList(s.nextID, l.OwnerID(), l.Title(), l.Description())
+	s.lists[s.nextID] = domain.RestoreList(s.nextID, l.OwnerID(), l.Title(), l.Description(), 1)
 	return s.nextID, nil
 }
 
@@ -49,10 +51,15 @@ func (s memLists) ListByOwner(_ context.Context, ownerID int64) ([]domain.List, 
 }
 
 func (s memLists) Update(ctx context.Context, l domain.List) error {
-	if _, err := s.Get(ctx, l.OwnerID(), l.ID()); err != nil {
+	stored, err := s.Get(ctx, l.OwnerID(), l.ID())
+	if err != nil {
 		return err
 	}
-	s.lists[l.ID()] = l
+	if s.conflicts > 0 || stored.Version() != l.Version() {
+		s.conflicts--
+		return domain.ErrConcurrentUpdate
+	}
+	s.lists[l.ID()] = domain.RestoreList(l.ID(), l.OwnerID(), l.Title(), l.Description(), l.Version()+1)
 	return nil
 }
 
@@ -74,7 +81,7 @@ func (s memItems) Add(_ context.Context, ownerID int64, it domain.Item) (int64, 
 		return 0, domain.ErrListNotFound
 	}
 	s.nextID++
-	s.items[s.nextID] = domain.RestoreItem(s.nextID, it.ListID(), it.Title(), it.Description(), it.Done())
+	s.items[s.nextID] = domain.RestoreItem(s.nextID, it.ListID(), it.Title(), it.Description(), it.Done(), 1)
 	return s.nextID, nil
 }
 
@@ -97,10 +104,15 @@ func (s memItems) ListByList(_ context.Context, ownerID, listID int64) ([]domain
 }
 
 func (s memItems) Update(ctx context.Context, ownerID int64, it domain.Item) error {
-	if _, err := s.Get(ctx, ownerID, it.ID()); err != nil {
+	stored, err := s.Get(ctx, ownerID, it.ID())
+	if err != nil {
 		return err
 	}
-	s.items[it.ID()] = it
+	if s.conflicts > 0 || stored.Version() != it.Version() {
+		s.conflicts--
+		return domain.ErrConcurrentUpdate
+	}
+	s.items[it.ID()] = domain.RestoreItem(it.ID(), it.ListID(), it.Title(), it.Description(), it.Done(), it.Version()+1)
 	return nil
 }
 
@@ -118,8 +130,13 @@ const (
 )
 
 func newService() *app.Service {
+	svc, _ := newServiceWithStore()
+	return svc
+}
+
+func newServiceWithStore() (*app.Service, *memStore) {
 	store := newMemStore()
-	return app.NewService(memLists{store}, memItems{store})
+	return app.NewService(memLists{store}, memItems{store}), store
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -215,3 +232,39 @@ func TestValidationHappensBeforePersistence(t *testing.T) {
 }
 
 func second[T any](_ T, err error) error { return err }
+
+func TestUpdatesRetryAfterConcurrentModification(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newServiceWithStore()
+	listID, _ := svc.CreateList(ctx, alice, "L", "")
+	itemID, _ := svc.AddItem(ctx, alice, listID, "I", "")
+
+	store.conflicts = app.MaxUpdateAttempts - 1
+	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); err != nil {
+		t.Fatalf("UpdateList after %d conflicts: %v", app.MaxUpdateAttempts-1, err)
+	}
+	store.conflicts = app.MaxUpdateAttempts - 1
+	if err := svc.UpdateItem(ctx, alice, itemID, domain.ItemPatch{Done: ptr(true)}); err != nil {
+		t.Fatalf("UpdateItem after %d conflicts: %v", app.MaxUpdateAttempts-1, err)
+	}
+
+	list, _ := svc.List(ctx, alice, listID)
+	item, _ := svc.Item(ctx, alice, itemID)
+	if list.Title() != "L2" || !item.Done() {
+		t.Errorf("updates not applied: %+v %+v", list, item)
+	}
+}
+
+func TestUpdatesGiveUpAfterMaxAttempts(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newServiceWithStore()
+	listID, _ := svc.CreateList(ctx, alice, "L", "")
+
+	store.conflicts = app.MaxUpdateAttempts
+	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); !errors.Is(err, domain.ErrConcurrentUpdate) {
+		t.Errorf("err = %v, want %v", err, domain.ErrConcurrentUpdate)
+	}
+	if list, _ := svc.List(ctx, alice, listID); list.Title() != "L" {
+		t.Errorf("title = %q, want unchanged", list.Title())
+	}
+}

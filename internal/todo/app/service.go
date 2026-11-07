@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
 )
@@ -34,14 +35,16 @@ func (s *Service) List(ctx context.Context, ownerID, listID int64) (domain.List,
 }
 
 func (s *Service) UpdateList(ctx context.Context, ownerID, listID int64, patch domain.ListPatch) error {
-	list, err := s.lists.Get(ctx, ownerID, listID)
-	if err != nil {
-		return err
-	}
-	if err := list.Apply(patch); err != nil {
-		return err
-	}
-	return s.lists.Update(ctx, list)
+	return retryOnConflict(func() error {
+		list, err := s.lists.Get(ctx, ownerID, listID)
+		if err != nil {
+			return err
+		}
+		if err := list.Apply(patch); err != nil {
+			return err
+		}
+		return s.lists.Update(ctx, list)
+	})
 }
 
 func (s *Service) DeleteList(ctx context.Context, ownerID, listID int64) error {
@@ -71,16 +74,34 @@ func (s *Service) Item(ctx context.Context, ownerID, itemID int64) (domain.Item,
 }
 
 func (s *Service) UpdateItem(ctx context.Context, ownerID, itemID int64, patch domain.ItemPatch) error {
-	item, err := s.items.Get(ctx, ownerID, itemID)
-	if err != nil {
-		return err
-	}
-	if err := item.Apply(patch); err != nil {
-		return err
-	}
-	return s.items.Update(ctx, ownerID, item)
+	return retryOnConflict(func() error {
+		item, err := s.items.Get(ctx, ownerID, itemID)
+		if err != nil {
+			return err
+		}
+		if err := item.Apply(patch); err != nil {
+			return err
+		}
+		return s.items.Update(ctx, ownerID, item)
+	})
 }
 
 func (s *Service) DeleteItem(ctx context.Context, ownerID, itemID int64) error {
 	return s.items.Delete(ctx, ownerID, itemID)
+}
+
+// MaxUpdateAttempts bounds how often an update is re-applied to a freshly
+// loaded aggregate after losing an optimistic concurrency race.
+const MaxUpdateAttempts = 3
+
+// retryOnConflict runs a load-apply-save cycle again when the save reports
+// ErrConcurrentUpdate, so concurrent patches to different fields both land.
+func retryOnConflict(update func() error) error {
+	var err error
+	for range MaxUpdateAttempts {
+		if err = update(); !errors.Is(err, domain.ErrConcurrentUpdate) {
+			return err
+		}
+	}
+	return err
 }

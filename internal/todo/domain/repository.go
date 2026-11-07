@@ -10,7 +10,8 @@ type ListRepository interface {
 	Add(ctx context.Context, list List) (int64, error)
 	Get(ctx context.Context, ownerID, listID int64) (List, error)
 	ListByOwner(ctx context.Context, ownerID int64) ([]List, error)
-	// Update saves title and description of a list previously returned by Get.
+	// Update saves title and description of a list previously returned by
+	// Get, or returns ErrConcurrentUpdate when it changed since then.
 	Update(ctx context.Context, list List) error
 	// Delete removes the list together with its items.
 	Delete(ctx context.Context, ownerID, listID int64) error
@@ -24,7 +25,8 @@ type ItemRepository interface {
 	Add(ctx context.Context, ownerID int64, item Item) (int64, error)
 	Get(ctx context.Context, ownerID, itemID int64) (Item, error)
 	ListByList(ctx context.Context, ownerID, listID int64) ([]Item, error)
-	// Update saves title, description and done of an item previously returned by Get.
+	// Update saves title, description and done of an item previously
+	// returned by Get, or returns ErrConcurrentUpdate when it changed since then.
 	Update(ctx context.Context, ownerID int64, item Item) error
 	Delete(ctx context.Context, ownerID, itemID int64) error
 }

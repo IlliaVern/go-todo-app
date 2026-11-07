@@ -45,7 +45,7 @@ func TestRepositoriesScopeEveryQueryToTheOwner(t *testing.T) {
 
 	list, _ := lists.Get(ctx, alice, listID)
 	item, _ := items.Get(ctx, alice, itemID)
-	hijackedList := domain.RestoreList(listID, bob, "hacked", "")
+	hijackedList := domain.RestoreList(listID, bob, "hacked", "", list.Version())
 
 	checks := []struct {
 		name    string
@@ -117,3 +117,52 @@ func TestAddListForMissingOwner(t *testing.T) {
 }
 
 func second[T any](_ T, err error) error { return err }
+
+func TestUpdateRejectsStaleVersions(t *testing.T) {
+	db := pgtest.Start(t)
+	ctx := context.Background()
+	lists, items := postgres.NewListRepository(db), postgres.NewItemRepository(db)
+	owner := insertUser(t, db, "owner")
+
+	newList, _ := domain.NewList(owner, "L", "")
+	listID, _ := lists.Add(ctx, newList)
+	newItem, _ := domain.NewItem(listID, "I", "")
+	itemID, _ := items.Add(ctx, owner, newItem)
+
+	// Two writers load the same version; the first save wins.
+	listA, _ := lists.Get(ctx, owner, listID)
+	listB, _ := lists.Get(ctx, owner, listID)
+	if err := listA.Apply(domain.ListPatch{Title: ptr("A")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lists.Update(ctx, listA); err != nil {
+		t.Fatal(err)
+	}
+	if err := listB.Apply(domain.ListPatch{Description: ptr("B")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lists.Update(ctx, listB); !errors.Is(err, domain.ErrConcurrentUpdate) {
+		t.Errorf("stale list update: err = %v, want %v", err, domain.ErrConcurrentUpdate)
+	}
+	if got, _ := lists.Get(ctx, owner, listID); got.Title() != "A" || got.Description() != "" || got.Version() != listA.Version()+1 {
+		t.Errorf("list after race = %+v", got)
+	}
+
+	itemA, _ := items.Get(ctx, owner, itemID)
+	itemB, _ := items.Get(ctx, owner, itemID)
+	_ = itemA.Apply(domain.ItemPatch{Done: ptr(true)})
+	if err := items.Update(ctx, owner, itemA); err != nil {
+		t.Fatal(err)
+	}
+	_ = itemB.Apply(domain.ItemPatch{Title: ptr("B")})
+	if err := items.Update(ctx, owner, itemB); !errors.Is(err, domain.ErrConcurrentUpdate) {
+		t.Errorf("stale item update: err = %v, want %v", err, domain.ErrConcurrentUpdate)
+	}
+
+	gone := domain.RestoreList(999999, owner, "x", "", 1)
+	if err := lists.Update(ctx, gone); !errors.Is(err, domain.ErrListNotFound) {
+		t.Errorf("missing list update: err = %v, want %v", err, domain.ErrListNotFound)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

@@ -17,10 +17,11 @@ type itemRow struct {
 	Title       string `db:"title"`
 	Description string `db:"description"`
 	Done        bool   `db:"done"`
+	Version     int64  `db:"version"`
 }
 
 func (r itemRow) toDomain() domain.Item {
-	return domain.RestoreItem(r.ID, r.ListID, r.Title, r.Description, r.Done)
+	return domain.RestoreItem(r.ID, r.ListID, r.Title, r.Description, r.Done, r.Version)
 }
 
 type ItemRepository struct {
@@ -48,7 +49,7 @@ func (r *ItemRepository) Add(ctx context.Context, ownerID int64, item domain.Ite
 
 func (r *ItemRepository) Get(ctx context.Context, ownerID, itemID int64) (domain.Item, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT ti.id, ti.list_id, ti.title, ti.description, ti.done
+		`SELECT ti.id, ti.list_id, ti.title, ti.description, ti.done, ti.version
 		   FROM todo_items ti
 		   JOIN todo_lists tl ON tl.id = ti.list_id
 		  WHERE ti.id = $1 AND tl.user_id = $2`,
@@ -65,7 +66,7 @@ func (r *ItemRepository) Get(ctx context.Context, ownerID, itemID int64) (domain
 
 func (r *ItemRepository) ListByList(ctx context.Context, ownerID, listID int64) ([]domain.Item, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT ti.id, ti.list_id, ti.title, ti.description, ti.done
+		`SELECT ti.id, ti.list_id, ti.title, ti.description, ti.done, ti.version
 		   FROM todo_items ti
 		   JOIN todo_lists tl ON tl.id = ti.list_id
 		  WHERE ti.list_id = $1 AND tl.user_id = $2
@@ -86,11 +87,19 @@ func (r *ItemRepository) ListByList(ctx context.Context, ownerID, listID int64) 
 func (r *ItemRepository) Update(ctx context.Context, ownerID int64, item domain.Item) error {
 	tag, err := r.db.Exec(ctx,
 		`UPDATE todo_items ti
-		    SET title = $1, description = $2, done = $3
+		    SET title = $1, description = $2, done = $3, version = ti.version + 1
 		   FROM todo_lists tl
-		  WHERE tl.id = ti.list_id AND ti.id = $4 AND tl.user_id = $5`,
-		item.Title(), item.Description(), item.Done(), item.ID(), ownerID)
-	return affectedOne(tag, err, domain.ErrItemNotFound)
+		  WHERE tl.id = ti.list_id AND ti.id = $4 AND tl.user_id = $5 AND ti.version = $6`,
+		item.Title(), item.Description(), item.Done(), item.ID(), ownerID, item.Version())
+	if err != nil || tag.RowsAffected() == 1 {
+		return err
+	}
+
+	// No row matched: either the item is gone or it changed since it was loaded.
+	if _, err := r.Get(ctx, ownerID, item.ID()); err != nil {
+		return err
+	}
+	return domain.ErrConcurrentUpdate
 }
 
 func (r *ItemRepository) Delete(ctx context.Context, ownerID, itemID int64) error {

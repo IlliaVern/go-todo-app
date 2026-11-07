@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -309,6 +310,35 @@ func TestAPI(t *testing.T) {
 		user.expect(user.do("GET", listPath, nil), http.StatusNotFound, nil)
 		user.expect(user.do("GET", fmt.Sprintf("/api/items/%d", second.ID), nil), http.StatusNotFound, nil)
 		user.expect(user.do("DELETE", listPath, nil), http.StatusNotFound, nil)
+	})
+
+	t.Run("concurrent patches to different fields both apply", func(t *testing.T) {
+		user := signUp(t, base)
+		var item idBody
+		var list idBody
+		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusOK, &list)
+		user.expect(user.do("POST", fmt.Sprintf("/api/lists/%d/items/", list.ID), map[string]string{"title": "old"}), http.StatusOK, &item)
+		itemPath := fmt.Sprintf("/api/items/%d", item.ID)
+
+		patches := []map[string]any{{"title": "new"}, {"done": true}, {"description": "d"}}
+		statuses := make(chan int, len(patches))
+		var wg sync.WaitGroup
+		for _, p := range patches {
+			wg.Go(func() { statuses <- user.do("PUT", itemPath, p).status })
+		}
+		wg.Wait()
+		close(statuses)
+		for status := range statuses {
+			if status != http.StatusOK {
+				t.Errorf("concurrent PUT status = %d, want 200", status)
+			}
+		}
+
+		var got itemBody
+		user.expect(user.do("GET", itemPath, nil), http.StatusOK, &got)
+		if got != (itemBody{ID: item.ID, Title: "new", Description: "d", Done: true}) {
+			t.Errorf("item after concurrent patches = %+v, want all three applied", got)
+		}
 	})
 
 	t.Run("users cannot touch each other's data", func(t *testing.T) {

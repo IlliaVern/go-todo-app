@@ -10,6 +10,8 @@ var (
 	ErrItemNotFound = errors.New("todo item not found")
 	// ErrOwnerNotFound means the authenticated owner no longer exists.
 	ErrOwnerNotFound = errors.New("authenticated user no longer exists")
+	// ErrConcurrentUpdate means the aggregate changed after it was loaded.
+	ErrConcurrentUpdate = errors.New("the resource was modified concurrently, retry the request")
 )
 
 // ValidationError reports input that violates an invariant of a list or item.

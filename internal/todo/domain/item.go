@@ -8,6 +8,7 @@ type Item struct {
 	title       string
 	description string
 	done        bool
+	version     int64 // see List.version
 }
 
 // NewItem creates an undone item that has not been persisted yet.
@@ -22,8 +23,8 @@ func NewItem(listID int64, title, description string) (Item, error) {
 }
 
 // RestoreItem rebuilds a persisted item. Only repositories call it.
-func RestoreItem(id, listID int64, title, description string, done bool) Item {
-	return Item{id: id, listID: listID, title: title, description: description, done: done}
+func RestoreItem(id, listID int64, title, description string, done bool, version int64) Item {
+	return Item{id: id, listID: listID, title: title, description: description, done: done, version: version}
 }
 
 func (i Item) ID() int64           { return i.id }
@@ -31,6 +32,7 @@ func (i Item) ListID() int64       { return i.listID }
 func (i Item) Title() string       { return i.title }
 func (i Item) Description() string { return i.description }
 func (i Item) Done() bool          { return i.done }
+func (i Item) Version() int64      { return i.version }
 
 // ItemPatch is a partial update; nil fields stay unchanged.
 type ItemPatch struct {

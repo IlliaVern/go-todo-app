@@ -233,6 +233,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrOwnerNotFound):
 		httpx.Error(w, r, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, domain.ErrConcurrentUpdate):
+		httpx.Error(w, r, http.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrListNotFound), errors.Is(err, domain.ErrItemNotFound):
 		httpx.Error(w, r, http.StatusNotFound, err.Error())
 	case errors.As(err, &invalid):

@@ -19,10 +19,11 @@ type listRow struct {
 	UserID      int64  `db:"user_id"`
 	Title       string `db:"title"`
 	Description string `db:"description"`
+	Version     int64  `db:"version"`
 }
 
 func (r listRow) toDomain() domain.List {
-	return domain.RestoreList(r.ID, r.UserID, r.Title, r.Description)
+	return domain.RestoreList(r.ID, r.UserID, r.Title, r.Description, r.Version)
 }
 
 type ListRepository struct {
@@ -47,7 +48,7 @@ func (r *ListRepository) Add(ctx context.Context, list domain.List) (int64, erro
 
 func (r *ListRepository) Get(ctx context.Context, ownerID, listID int64) (domain.List, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT id, user_id, title, description FROM todo_lists WHERE id = $1 AND user_id = $2`,
+		`SELECT id, user_id, title, description, version FROM todo_lists WHERE id = $1 AND user_id = $2`,
 		listID, ownerID)
 	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[listRow])
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -61,7 +62,7 @@ func (r *ListRepository) Get(ctx context.Context, ownerID, listID int64) (domain
 
 func (r *ListRepository) ListByOwner(ctx context.Context, ownerID int64) ([]domain.List, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT id, user_id, title, description FROM todo_lists WHERE user_id = $1 ORDER BY id`,
+		`SELECT id, user_id, title, description, version FROM todo_lists WHERE user_id = $1 ORDER BY id`,
 		ownerID)
 	listRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[listRow])
 	if err != nil {
@@ -77,9 +78,27 @@ func (r *ListRepository) ListByOwner(ctx context.Context, ownerID int64) ([]doma
 
 func (r *ListRepository) Update(ctx context.Context, list domain.List) error {
 	tag, err := r.db.Exec(ctx,
-		`UPDATE todo_lists SET title = $1, description = $2 WHERE id = $3 AND user_id = $4`,
-		list.Title(), list.Description(), list.ID(), list.OwnerID())
-	return affectedOne(tag, err, domain.ErrListNotFound)
+		`UPDATE todo_lists SET title = $1, description = $2, version = version + 1
+		  WHERE id = $3 AND user_id = $4 AND version = $5`,
+		list.Title(), list.Description(), list.ID(), list.OwnerID(), list.Version())
+	if err != nil || tag.RowsAffected() == 1 {
+		return err
+	}
+	return r.missingOrConflict(ctx, list.OwnerID(), list.ID())
+}
+
+// missingOrConflict explains an update that matched no row.
+func (r *ListRepository) missingOrConflict(ctx context.Context, ownerID, listID int64) error {
+	var exists bool
+	if err := r.db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM todo_lists WHERE id = $1 AND user_id = $2)`,
+		listID, ownerID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return domain.ErrConcurrentUpdate
+	}
+	return domain.ErrListNotFound
 }
 
 func (r *ListRepository) Delete(ctx context.Context, ownerID, listID int64) error {

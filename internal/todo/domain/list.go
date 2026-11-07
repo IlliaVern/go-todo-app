@@ -8,6 +8,9 @@ type List struct {
 	ownerID     int64
 	title       string
 	description string
+	// version increases on every saved update; repositories use it for
+	// optimistic concurrency control.
+	version int64
 }
 
 // NewList creates a list that has not been persisted yet.
@@ -22,14 +25,15 @@ func NewList(ownerID int64, title, description string) (List, error) {
 }
 
 // RestoreList rebuilds a persisted list. Only repositories call it.
-func RestoreList(id, ownerID int64, title, description string) List {
-	return List{id: id, ownerID: ownerID, title: title, description: description}
+func RestoreList(id, ownerID int64, title, description string, version int64) List {
+	return List{id: id, ownerID: ownerID, title: title, description: description, version: version}
 }
 
 func (l List) ID() int64           { return l.id }
 func (l List) OwnerID() int64      { return l.ownerID }
 func (l List) Title() string       { return l.title }
 func (l List) Description() string { return l.description }
+func (l List) Version() int64      { return l.version }
 
 // ListPatch is a partial update; nil fields stay unchanged.
 type ListPatch struct {

@@ -60,7 +60,7 @@ func TestListApply(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			list := domain.RestoreList(1, 7, "old", "old desc")
+			list := domain.RestoreList(1, 7, "old", "old desc", 1)
 			err := list.Apply(tt.patch)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
