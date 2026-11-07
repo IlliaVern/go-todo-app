@@ -12,12 +12,26 @@ import (
 // Config is read from the environment; defaults suit `make run` against the
 // Compose database on localhost:5436.
 type Config struct {
-	Port       string `env:"PORT" envDefault:"8000"`
+	Server
 	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
 	SigningKey string `env:"AUTH_SIGNING_KEY,notEmpty"`
 	// AuthRequestsPerMinute limits sign-up and sign-in requests per client IP.
 	AuthRequestsPerMinute int `env:"AUTH_RATE_LIMIT_PER_MINUTE" envDefault:"20"`
 	DB                    DB  `envPrefix:"DB_"`
+}
+
+// Server holds the settings shared with the healthcheck subcommand.
+type Server struct {
+	Port string `env:"PORT" envDefault:"8000"`
+}
+
+// LoadServer parses only the Server settings, which need no secrets.
+func LoadServer() (Server, error) {
+	s, err := env.ParseAs[Server]()
+	if err != nil {
+		return Server{}, fmt.Errorf("load config: %w", err)
+	}
+	return s, nil
 }
 
 // DB holds the DB_* connection settings.

@@ -26,4 +26,7 @@ COPY --from=build /out/todo-app /app/todo-app
 EXPOSE 8000
 USER nonroot:nonroot
 
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/todo-app", "healthcheck"]
+
 ENTRYPOINT ["/app/todo-app"]

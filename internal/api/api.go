@@ -15,6 +15,7 @@ import (
 	"github.com/IlliaVern/go-todo-app/internal/identity/password"
 	identitypg "github.com/IlliaVern/go-todo-app/internal/identity/postgres"
 	"github.com/IlliaVern/go-todo-app/internal/identity/token"
+	"github.com/IlliaVern/go-todo-app/internal/platform/health"
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
 	todoapp "github.com/IlliaVern/go-todo-app/internal/todo/app"
 	todohttp "github.com/IlliaVern/go-todo-app/internal/todo/httpapi"
@@ -51,5 +52,9 @@ func NewHandler(db *pgxpool.Pool, opts Options) (http.Handler, error) {
 	identity.Register(mux, httpx.NewRateLimiter(opts.AuthRequestsPerMinute).Middleware)
 	todohttp.NewHandler(todoSvc).Register(mux, identity.Authenticate)
 
-	return httpx.RequestLogger(opts.Logger, httpx.Recovery(mux)), nil
+	// Probes sit outside request logging so health checks do not flood the logs.
+	root := http.NewServeMux()
+	health.Register(root, map[string]health.Pinger{"database": db})
+	root.Handle("/", httpx.RequestLogger(opts.Logger, httpx.Recovery(mux)))
+	return root, nil
 }

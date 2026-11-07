@@ -16,7 +16,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := config.Config{
-		Port:                  "8000",
+		Server:                config.Server{Port: "8000"},
 		LogLevel:              "info",
 		SigningKey:            "key",
 		AuthRequestsPerMinute: 20,

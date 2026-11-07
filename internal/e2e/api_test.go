@@ -147,6 +147,16 @@ type messageBody struct{ Message string }
 func TestAPI(t *testing.T) {
 	base := startAPI(t)
 
+	t.Run("probes", func(t *testing.T) {
+		anon := client{t: t, base: base}
+		anon.expect(anon.do("GET", "/healthz", nil), http.StatusOK, nil)
+		var ready struct{ Status string }
+		anon.expect(anon.do("GET", "/readyz", nil), http.StatusOK, &ready)
+		if ready.Status != "ready" {
+			t.Errorf("readyz status = %q", ready.Status)
+		}
+	})
+
 	t.Run("auth", func(t *testing.T) {
 		anon := client{t: t, base: base}
 		username := fmt.Sprintf("auth-%d", time.Now().UnixNano())

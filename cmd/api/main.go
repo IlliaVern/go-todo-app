@@ -13,6 +13,7 @@ import (
 
 	"github.com/IlliaVern/go-todo-app/internal/api"
 	"github.com/IlliaVern/go-todo-app/internal/platform/config"
+	"github.com/IlliaVern/go-todo-app/internal/platform/health"
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpserver"
 	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
@@ -22,6 +23,10 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck())
+	}
+
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	if err := run(); err != nil {
@@ -90,4 +95,18 @@ func run() error {
 	}
 
 	return nil
+}
+
+// healthcheck probes the running server's readiness endpoint and returns the
+// process exit code; the container HEALTHCHECK runs `todo-app healthcheck`.
+func healthcheck() int {
+	srv, err := config.LoadServer()
+	if err == nil {
+		err = health.Check(context.Background(), srv.Port)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "unhealthy:", err)
+		return 1
+	}
+	return 0
 }
