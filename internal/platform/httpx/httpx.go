@@ -36,6 +36,13 @@ func Error(c *gin.Context, status int, message string) {
 	c.AbortWithStatusJSON(status, errorResponse{Message: message})
 }
 
+// ErrorWithReason aborts with a client-visible message while logging a more
+// detailed reason, e.g. why a token was rejected.
+func ErrorWithReason(c *gin.Context, status int, message, reason string) {
+	c.AbortWithStatusJSON(status, errorResponse{Message: message})
+	c.Set(reasonKey, reason)
+}
+
 // InternalError aborts with a generic 500, keeping internals out of the
 // response; RequestLogger records err.
 func InternalError(c *gin.Context, err error) {

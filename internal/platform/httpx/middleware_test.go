@@ -31,6 +31,9 @@ func newRouter(t *testing.T) (*gin.Engine, *bytes.Buffer) {
 		httpx.OK(c)
 	})
 	r.GET("/rejected", func(c *gin.Context) { httpx.Error(c, http.StatusNotFound, "thing not found") })
+	r.GET("/token", func(c *gin.Context) {
+		httpx.ErrorWithReason(c, http.StatusUnauthorized, "invalid token", "token is expired")
+	})
 	r.GET("/failed", func(c *gin.Context) { httpx.InternalError(c, errors.New("db is down")) })
 	r.GET("/panic", func(*gin.Context) { panic("boom") })
 	return r, &buf
@@ -68,6 +71,7 @@ func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 		wantValue  string
 	}{
 		{path: "/rejected", wantStatus: 404, wantLevel: "WARN", wantField: "reason", wantValue: "thing not found"},
+		{path: "/token", wantStatus: 401, wantLevel: "WARN", wantField: "reason", wantValue: "token is expired"},
 		{path: "/failed", wantStatus: 500, wantLevel: "ERROR", wantField: "error", wantValue: "db is down"},
 		{path: "/missing", wantStatus: 404, wantLevel: "WARN", wantField: "path", wantValue: "/missing"},
 	}

@@ -98,7 +98,7 @@ func (h *Handler) Authenticate(c *gin.Context) {
 
 	userID, err := h.svc.Authenticate(token)
 	if err != nil {
-		httpx.Error(c, http.StatusUnauthorized, app.ErrInvalidToken.Error())
+		httpx.ErrorWithReason(c, http.StatusUnauthorized, app.ErrInvalidToken.Error(), err.Error())
 		return
 	}
 
