@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -45,7 +47,7 @@ func main() {
 
 	srv := new(todo.Server)
 	go func() {
-		if err := srv.Run(viper.GetString("port"), handlers.InitRoutes()); err != nil {
+		if err := srv.Run(viper.GetString("port"), handlers.InitRoutes()); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.Fatalf("Error ocurred while running http server: %s\n", err.Error())
 		}
 	}()
@@ -58,7 +60,7 @@ func main() {
 
 	logrus.Print("TodoApp Shutting Down...")
 
-	if err := srv.Shutdown(context.Background()); err == nil {
+	if err := srv.Shutdown(context.Background()); err != nil {
 		logrus.Errorf("error ocurred on server shutting down: %s", err.Error())
 	}
 	if err := db.Close(); err != nil {
