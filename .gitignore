@@ -3,3 +3,4 @@
 .DS_Store
 /logs/!*
 /logs/error.log
+/bin/
