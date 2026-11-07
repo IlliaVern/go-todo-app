@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +25,13 @@ func newHandler(t *testing.T) (http.Handler, *bytes.Buffer) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", httpx.NotFound)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w, r) })
+	httpx.Handle(mux, http.MethodGet, "/things", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { httpx.OK(w, r) }))
+	mux.HandleFunc("GET /cancelled", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(r.Context())
+		cancel()
+		httpx.InternalError(w, r.WithContext(ctx), fmt.Errorf("hash password: %w", ctx.Err()))
+	})
 	mux.HandleFunc("GET /ok", func(w http.ResponseWriter, r *http.Request) {
 		slog.New(logger.Handler()).InfoContext(r.Context(), "inside handler")
 		httpx.OK(w, r)
@@ -40,12 +47,14 @@ func newHandler(t *testing.T) (http.Handler, *bytes.Buffer) {
 	})
 	mux.HandleFunc("GET /panic", func(http.ResponseWriter, *http.Request) { panic("boom") })
 	mux.HandleFunc("POST /echo", func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]string
+		var body struct {
+			A string `json:"a"`
+		}
 		if httpx.DecodeJSON(w, r, &body) {
 			httpx.OK(w, r)
 		}
 	})
-	return httpx.RequestLogger(logger, httpx.Recovery(mux)), &buf
+	return httpx.RequestLogger(logger, httpx.Recovery(httpx.JSONErrors(mux)), "/healthz"), &buf
 }
 
 func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
@@ -83,7 +92,11 @@ func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 		{path: "/things/7", wantStatus: 404, wantLevel: "WARN", wantRoute: "/things/{id}", wantField: "reason", wantValue: "thing not found"},
 		{path: "/token", wantStatus: 401, wantLevel: "WARN", wantRoute: "/token", wantField: "reason", wantValue: "token is expired"},
 		{path: "/failed", wantStatus: 500, wantLevel: "ERROR", wantRoute: "/failed", wantField: "error", wantValue: "db is down"},
-		{path: "/missing", wantStatus: 404, wantLevel: "WARN", wantRoute: "/", wantField: "path", wantValue: "/missing"},
+		{path: "/missing", wantStatus: 404, wantLevel: "WARN", wantRoute: "", wantField: "path", wantValue: "/missing"},
+		{path: "/echo", wantStatus: 405, wantLevel: "WARN", wantRoute: "", wantField: "reason", wantValue: "method not allowed"},
+		{path: "/cancelled", wantStatus: 499, wantLevel: "WARN", wantRoute: "/cancelled", wantField: "reason", wantValue: "hash password: context canceled"},
+		{path: "/things/", wantStatus: 200, wantLevel: "INFO", wantRoute: "/things", wantField: "method", wantValue: "GET"},
+		{path: "/healthz", wantStatus: 200, wantLevel: "DEBUG", wantRoute: "/healthz", wantField: "method", wantValue: "GET"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -172,6 +185,8 @@ func TestDecodeJSON(t *testing.T) {
 		{name: "malformed", body: `{"a":`, wantStatus: 400},
 		{name: "empty", body: ``, wantStatus: 400},
 		{name: "too large", body: `{"a":"` + strings.Repeat("x", httpx.MaxBodyBytes) + `"}`, wantStatus: 413},
+		{name: "trailing data", body: `{"a":"b"} {"c":"d"}`, wantStatus: 400},
+		{name: "unknown field", body: `{"a":"b","x":1}`, wantStatus: 400},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -186,5 +201,13 @@ func TestDecodeJSON(t *testing.T) {
 func TestNewRejectsUnknownLevel(t *testing.T) {
 	if _, err := logging.New(&bytes.Buffer{}, "loud"); err == nil {
 		t.Error("expected error for unknown level")
+	}
+}
+
+func TestMethodNotAllowedListsAllowedMethods(t *testing.T) {
+	h, _ := newHandler(t)
+	rec := serve(h, http.MethodDelete, "/echo", "", "")
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Errorf("got %d Allow=%q, want 405 Allow=POST", rec.Code, rec.Header().Get("Allow"))
 	}
 }

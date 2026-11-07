@@ -23,8 +23,8 @@ func NewHandler(svc *app.Service) *Handler {
 // Register mounts the auth routes on mux behind limit, which throttles
 // credential guessing and sign-up floods.
 func (h *Handler) Register(mux *http.ServeMux, limit func(http.Handler) http.Handler) {
-	mux.Handle("POST /auth/sign-up", limit(http.HandlerFunc(h.signUp)))
-	mux.Handle("POST /auth/sign-in", limit(http.HandlerFunc(h.signIn)))
+	httpx.Handle(mux, http.MethodPost, "/auth/sign-up", limit(http.HandlerFunc(h.signUp)))
+	httpx.Handle(mux, http.MethodPost, "/auth/sign-in", limit(http.HandlerFunc(h.signIn)))
 }
 
 type signUpRequest struct {
@@ -51,7 +51,7 @@ func (h *Handler) signUp(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		httpx.InternalError(w, r, err)
 	default:
-		httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: id})
+		httpx.JSON(w, r, http.StatusCreated, httpx.IDResponse{ID: id})
 	}
 }
 

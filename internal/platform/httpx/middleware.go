@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,8 +38,10 @@ func outcomeFrom(ctx context.Context) *outcome {
 // X-Request-ID), stores it in the request context for logging, and writes
 // exactly one access log line per request once it completes: ERROR for 5xx
 // (with the error), WARN for 4xx (with the rejection reason), INFO otherwise.
-// It must wrap the ServeMux directly so the matched pattern is visible.
-func RequestLogger(logger *slog.Logger, next http.Handler) http.Handler {
+// Successful requests to quietPaths, such as health probes, log at DEBUG.
+// Handlers between it and the ServeMux must pass the request on unchanged so
+// the matched pattern is visible.
+func RequestLogger(logger *slog.Logger, next http.Handler, quietPaths ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -55,11 +58,13 @@ func RequestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 
 		next.ServeHTTP(rec, r)
 
-		// ServeMux records the matched pattern ("GET /api/lists/{id}") on r.
+		// ServeMux records the matched pattern ("GET /api/lists/{id}") on r;
+		// trailing-slash variants ("/api/lists/{$}") log as their base route.
 		_, route, _ := strings.Cut(r.Pattern, " ")
 		if route == "" {
 			route = r.Pattern
 		}
+		route = strings.TrimSuffix(route, "/{$}")
 		status := rec.statusCode()
 		attrs := []slog.Attr{
 			slog.String("method", r.Method),
@@ -69,7 +74,7 @@ func RequestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 			slog.Int("bytes", rec.bytes),
 			slog.String("client_ip", clientIP(r)),
 		}
-		if route == "" || route == "/" { // no API route matched: record what was asked for
+		if route == "" { // no route matched: record what was asked for
 			attrs = append(attrs, slog.String("path", r.URL.Path))
 		}
 		if o.reason != "" {
@@ -85,6 +90,8 @@ func RequestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 			level = slog.LevelError
 		case status >= http.StatusBadRequest:
 			level = slog.LevelWarn
+		case slices.Contains(quietPaths, route):
+			level = slog.LevelDebug
 		}
 		logger.LogAttrs(ctx, level, "request", attrs...)
 	})
@@ -107,6 +114,36 @@ func Recovery(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// JSONErrors serves mux, answering requests that match no route with a JSON
+// 404, or with a JSON 405 and an Allow header when only the method is wrong.
+func JSONErrors(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pattern := mux.Handler(r); pattern != "" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		// ServeMux's own answer tells 404 from 405 and lists allowed methods.
+		probe := &headerRecorder{header: http.Header{}}
+		mux.ServeHTTP(probe, r)
+		if probe.status == http.StatusMethodNotAllowed {
+			w.Header().Set("Allow", probe.header.Get("Allow"))
+			Error(w, r, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		Error(w, r, http.StatusNotFound, "route not found")
+	})
+}
+
+// headerRecorder captures status and headers and discards the body.
+type headerRecorder struct {
+	header http.Header
+	status int
+}
+
+func (h *headerRecorder) Header() http.Header         { return h.header }
+func (h *headerRecorder) Write(b []byte) (int, error) { return len(b), nil }
+func (h *headerRecorder) WriteHeader(code int)        { h.status = code }
 
 // clientIP is the direct peer; no proxy headers are trusted.
 func clientIP(r *http.Request) string {

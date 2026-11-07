@@ -25,8 +25,9 @@ type listResponse struct {
 	Description string `json:"description"`
 }
 
-type listsResponse struct {
-	Data []listResponse `json:"data"`
+// collection is the envelope for every list endpoint response.
+type collection[T any] struct {
+	Data []T `json:"data"`
 }
 
 type itemResponse struct {

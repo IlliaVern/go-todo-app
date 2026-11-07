@@ -19,26 +19,24 @@ func NewHandler(svc *app.Service) *Handler {
 }
 
 // Register mounts the routes on mux behind auth, which must authenticate the
-// caller. Collection routes answer with and without a trailing slash.
+// caller.
 func (h *Handler) Register(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
-	handle := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, auth(fn)) }
-	collection := func(method, path string, fn http.HandlerFunc) {
-		handle(method+" "+path, fn)
-		handle(method+" "+path+"/{$}", fn)
+	route := func(method, path string, fn http.HandlerFunc) {
+		httpx.Handle(mux, method, path, auth(fn))
 	}
 
-	collection(http.MethodPost, "/api/lists", h.createList)
-	collection(http.MethodGet, "/api/lists", h.getAllLists)
-	handle("GET /api/lists/{id}", h.getListByID)
-	handle("PUT /api/lists/{id}", h.updateList)
-	handle("DELETE /api/lists/{id}", h.deleteList)
+	route(http.MethodPost, "/api/lists", h.createList)
+	route(http.MethodGet, "/api/lists", h.getAllLists)
+	route(http.MethodGet, "/api/lists/{id}", h.getListByID)
+	route(http.MethodPatch, "/api/lists/{id}", h.updateList)
+	route(http.MethodDelete, "/api/lists/{id}", h.deleteList)
 
-	collection(http.MethodPost, "/api/lists/{id}/items", h.createItem)
-	collection(http.MethodGet, "/api/lists/{id}/items", h.getAllItems)
+	route(http.MethodPost, "/api/lists/{id}/items", h.createItem)
+	route(http.MethodGet, "/api/lists/{id}/items", h.getAllItems)
 
-	handle("GET /api/items/{id}", h.getItemByID)
-	handle("PUT /api/items/{id}", h.updateItem)
-	handle("DELETE /api/items/{id}", h.deleteItem)
+	route(http.MethodGet, "/api/items/{id}", h.getItemByID)
+	route(http.MethodPatch, "/api/items/{id}", h.updateItem)
+	route(http.MethodDelete, "/api/items/{id}", h.deleteItem)
 }
 
 // owner returns the authenticated caller as the owner of todo data.
@@ -72,7 +70,7 @@ func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: int64(id)})
+	httpx.JSON(w, r, http.StatusCreated, httpx.IDResponse{ID: int64(id)})
 }
 
 func (h *Handler) getAllLists(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +84,7 @@ func (h *Handler) getAllLists(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	httpx.JSON(w, r, http.StatusOK, listsResponse{Data: toListResponses(lists)})
+	httpx.JSON(w, r, http.StatusOK, collection[listResponse]{Data: toListResponses(lists)})
 }
 
 func (h *Handler) getListByID(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +147,7 @@ func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: int64(id)})
+	httpx.JSON(w, r, http.StatusCreated, httpx.IDResponse{ID: int64(id)})
 }
 
 func (h *Handler) getAllItems(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +161,7 @@ func (h *Handler) getAllItems(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	httpx.JSON(w, r, http.StatusOK, toItemResponses(items))
+	httpx.JSON(w, r, http.StatusOK, collection[itemResponse]{Data: toItemResponses(items)})
 }
 
 func (h *Handler) getItemByID(w http.ResponseWriter, r *http.Request) {

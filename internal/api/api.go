@@ -46,15 +46,12 @@ func NewHandler(db *pgxpool.Pool, opts Options) (http.Handler, error) {
 	todoSvc := todoapp.NewService(todopg.NewListRepository(db), todopg.NewItemRepository(db))
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", httpx.NotFound)
+	health.Register(mux, map[string]health.Pinger{"database": db})
 
 	identity := identityhttp.NewHandler(identitySvc)
 	identity.Register(mux, httpx.NewRateLimiter(opts.AuthRequestsPerMinute).Middleware)
 	todohttp.NewHandler(todoSvc).Register(mux, identity.Authenticate)
 
-	// Probes sit outside request logging so health checks do not flood the logs.
-	root := http.NewServeMux()
-	health.Register(root, map[string]health.Pinger{"database": db})
-	root.Handle("/", httpx.RequestLogger(opts.Logger, httpx.Recovery(mux)))
-	return root, nil
+	handler := httpx.Recovery(httpx.JSONErrors(mux))
+	return httpx.RequestLogger(opts.Logger, handler, health.LivenessPath, health.ReadinessPath), nil
 }

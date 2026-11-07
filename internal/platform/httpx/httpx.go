@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -26,6 +27,12 @@ type statusResponse struct {
 // IDResponse is returned by endpoints that create a resource.
 type IDResponse struct {
 	ID int64 `json:"id"`
+}
+
+// Handle registers h for method and path, with and without a trailing slash.
+func Handle(mux *http.ServeMux, method, path string, h http.Handler) {
+	mux.Handle(method+" "+path, h)
+	mux.Handle(method+" "+path+"/{$}", h)
 }
 
 // JSON writes v with the given status.
@@ -57,34 +64,58 @@ func ErrorWithReason(w http.ResponseWriter, r *http.Request, status int, message
 	JSON(w, r, status, errorResponse{Message: message})
 }
 
+// StatusClientClosedRequest is the de facto status (from nginx) for requests
+// the client abandoned; it only appears in logs.
+const StatusClientClosedRequest = 499
+
 // InternalError answers with a generic 500, keeping internals out of the
-// response; RequestLogger records err.
+// response; RequestLogger records err. A request the client cancelled is
+// logged as 499 instead, since nobody receives the answer.
 func InternalError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+		ErrorWithReason(w, r, StatusClientClosedRequest, "client closed request", err.Error())
+		return
+	}
 	if o := outcomeFrom(r.Context()); o != nil {
 		o.err = err.Error()
 	}
 	JSON(w, r, http.StatusInternalServerError, errorResponse{Message: "internal server error"})
 }
 
-// NotFound answers unmatched routes.
-func NotFound(w http.ResponseWriter, r *http.Request) {
-	Error(w, r, http.StatusNotFound, "route not found")
+// DecodeJSON decodes the body, which must be a single JSON value with only
+// fields dst declares, into dst. It answers 400 otherwise and 413 for bodies
+// over MaxBodyBytes.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	// The innermost writer lets net/http close the connection after an
+	// oversized body.
+	r.Body = http.MaxBytesReader(innermost(w), r.Body, MaxBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	err := dec.Decode(dst)
+	if err == nil && !errors.Is(dec.Decode(&struct{}{}), io.EOF) {
+		err = errors.New("unexpected data after the JSON value")
+	}
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		Error(w, r, http.StatusRequestEntityTooLarge, "request body too large")
+	case err != nil:
+		Error(w, r, http.StatusBadRequest, "invalid request body: "+err.Error())
+	default:
+		return true
+	}
+	return false
 }
 
-// DecodeJSON decodes the body into dst, answering 400 on malformed JSON and
-// 413 on bodies over MaxBodyBytes.
-func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			Error(w, r, http.StatusRequestEntityTooLarge, "request body too large")
-			return false
+func innermost(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return w
 		}
-		Error(w, r, http.StatusBadRequest, "invalid request body: "+err.Error())
-		return false
+		w = u.Unwrap()
 	}
-	return true
 }
 
 // PathID parses the positive integer path wildcard {id}, answering 400 otherwise.
