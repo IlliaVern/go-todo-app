@@ -18,16 +18,16 @@ type fakeUsers struct {
 }
 
 func (f *fakeUsers) Add(_ context.Context, u domain.User) (int64, error) {
-	if _, taken := f.byUsername[u.Username()]; taken {
+	if _, taken := f.byUsername[u.Username().String()]; taken {
 		return 0, domain.ErrUsernameTaken
 	}
 	f.nextID++
-	f.byUsername[u.Username()] = domain.RestoreUser(f.nextID, u.Name(), u.Username(), u.PasswordHash())
+	f.byUsername[u.Username().String()] = domain.RestoreUser(f.nextID, u.Name().String(), u.Username().String(), u.PasswordHash())
 	return f.nextID, nil
 }
 
-func (f *fakeUsers) ByUsername(_ context.Context, username string) (domain.User, error) {
-	u, ok := f.byUsername[username]
+func (f *fakeUsers) ByUsername(_ context.Context, username domain.Username) (domain.User, error) {
+	u, ok := f.byUsername[username.String()]
 	if !ok {
 		return domain.User{}, domain.ErrUserNotFound
 	}

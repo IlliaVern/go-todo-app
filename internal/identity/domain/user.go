@@ -6,8 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-	"unicode/utf8"
 )
 
 const (
@@ -46,48 +44,28 @@ var ErrPasswordHashEmpty = errors.New("password hash is empty")
 // hash only, never the plain password.
 type User struct {
 	id           int64
-	name         string
-	username     string
+	name         Name
+	username     Username
 	passwordHash string
 }
 
 // NewUser creates a user that has not been persisted yet.
-func NewUser(name, username, passwordHash string) (User, error) {
-	if err := ValidateProfile(name, username); err != nil {
-		return User{}, err
-	}
+func NewUser(name Name, username Username, passwordHash string) (User, error) {
 	if passwordHash == "" {
 		return User{}, ErrPasswordHashEmpty
 	}
 	return User{name: name, username: username, passwordHash: passwordHash}, nil
 }
 
-// ValidateProfile checks name and username, so callers can reject bad input
-// before paying for password hashing.
-func ValidateProfile(name, username string) error {
-	switch {
-	case strings.TrimSpace(name) == "":
-		return ErrNameRequired
-	case utf8.RuneCountInString(name) > MaxNameLength:
-		return ErrNameTooLong
-	case strings.TrimSpace(username) == "":
-		return ErrUsernameRequired
-	case utf8.RuneCountInString(username) > MaxUsernameLength:
-		return ErrUsernameTooLong
-	case strings.ContainsRune(name, 0), strings.ContainsRune(username, 0):
-		return ErrNULCharacter
-	}
-	return nil
-}
-
-// RestoreUser rebuilds a persisted user. Only repositories call it.
+// RestoreUser rebuilds a persisted user from trusted storage without
+// re-validating it. Only repositories call it.
 func RestoreUser(id int64, name, username, passwordHash string) User {
-	return User{id: id, name: name, username: username, passwordHash: passwordHash}
+	return User{id: id, name: Name{name}, username: Username{username}, passwordHash: passwordHash}
 }
 
 func (u User) ID() int64            { return u.id }
-func (u User) Name() string         { return u.name }
-func (u User) Username() string     { return u.username }
+func (u User) Name() Name           { return u.name }
+func (u User) Username() Username   { return u.username }
 func (u User) PasswordHash() string { return u.passwordHash }
 
 // ValidatePassword checks a plain password against the password policy.
@@ -106,5 +84,5 @@ type UserRepository interface {
 	// Add stores a new user and returns its id, or ErrUsernameTaken.
 	Add(ctx context.Context, user User) (int64, error)
 	// ByUsername returns the user or ErrUserNotFound.
-	ByUsername(ctx context.Context, username string) (User, error)
+	ByUsername(ctx context.Context, username Username) (User, error)
 }

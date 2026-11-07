@@ -39,7 +39,7 @@ func (r *ItemRepository) Add(ctx context.Context, ownerID int64, item domain.Ite
 		`INSERT INTO todo_items (list_id, title, description, done)
 		 SELECT tl.id, $2, $3, $4 FROM todo_lists tl WHERE tl.id = $1 AND tl.user_id = $5
 		 RETURNING id`,
-		item.ListID(), item.Title(), item.Description(), item.Done(), ownerID,
+		item.ListID(), item.Title().String(), item.Description().String(), item.Done(), ownerID,
 	).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) || postgres.IsForeignKeyViolation(err) {
 		return 0, domain.ErrListNotFound
@@ -90,7 +90,7 @@ func (r *ItemRepository) Update(ctx context.Context, ownerID int64, item domain.
 		    SET title = $1, description = $2, done = $3, version = ti.version + 1
 		   FROM todo_lists tl
 		  WHERE tl.id = ti.list_id AND ti.id = $4 AND tl.user_id = $5 AND ti.version = $6`,
-		item.Title(), item.Description(), item.Done(), item.ID(), ownerID, item.Version())
+		item.Title().String(), item.Description().String(), item.Done(), item.ID(), ownerID, item.Version())
 	if err != nil || tag.RowsAffected() == 1 {
 		return err
 	}

@@ -28,7 +28,7 @@ type memItems struct{ *memStore }
 
 func (s memLists) Add(_ context.Context, l domain.List) (int64, error) {
 	s.nextID++
-	s.lists[s.nextID] = domain.RestoreList(s.nextID, l.OwnerID(), l.Title(), l.Description(), 1)
+	s.lists[s.nextID] = domain.RestoreList(s.nextID, l.OwnerID(), l.Title().String(), l.Description().String(), 1)
 	return s.nextID, nil
 }
 
@@ -59,7 +59,7 @@ func (s memLists) Update(ctx context.Context, l domain.List) error {
 		s.conflicts--
 		return domain.ErrConcurrentUpdate
 	}
-	s.lists[l.ID()] = domain.RestoreList(l.ID(), l.OwnerID(), l.Title(), l.Description(), l.Version()+1)
+	s.lists[l.ID()] = domain.RestoreList(l.ID(), l.OwnerID(), l.Title().String(), l.Description().String(), l.Version()+1)
 	return nil
 }
 
@@ -81,7 +81,7 @@ func (s memItems) Add(_ context.Context, ownerID int64, it domain.Item) (int64, 
 		return 0, domain.ErrListNotFound
 	}
 	s.nextID++
-	s.items[s.nextID] = domain.RestoreItem(s.nextID, it.ListID(), it.Title(), it.Description(), it.Done(), 1)
+	s.items[s.nextID] = domain.RestoreItem(s.nextID, it.ListID(), it.Title().String(), it.Description().String(), it.Done(), 1)
 	return s.nextID, nil
 }
 
@@ -112,7 +112,7 @@ func (s memItems) Update(ctx context.Context, ownerID int64, it domain.Item) err
 		s.conflicts--
 		return domain.ErrConcurrentUpdate
 	}
-	s.items[it.ID()] = domain.RestoreItem(it.ID(), it.ListID(), it.Title(), it.Description(), it.Done(), it.Version()+1)
+	s.items[it.ID()] = domain.RestoreItem(it.ID(), it.ListID(), it.Title().String(), it.Description().String(), it.Done(), it.Version()+1)
 	return nil
 }
 
@@ -154,7 +154,7 @@ func TestListLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := svc.List(ctx, alice, listID)
-	if err != nil || list.Title() != "Groceries" || list.Description() != "weekly" {
+	if err != nil || list.Title().String() != "Groceries" || list.Description().String() != "weekly" {
 		t.Fatalf("List = %+v, %v", list, err)
 	}
 
@@ -166,7 +166,7 @@ func TestListLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	items, err := svc.Items(ctx, alice, listID)
-	if err != nil || len(items) != 1 || !items[0].Done() || items[0].Title() != "Milk" {
+	if err != nil || len(items) != 1 || !items[0].Done() || items[0].Title().String() != "Milk" {
 		t.Fatalf("Items = %+v, %v", items, err)
 	}
 
@@ -209,7 +209,7 @@ func TestOtherOwnersDataIsInvisible(t *testing.T) {
 		t.Errorf("bob sees %d lists, want 0", len(lists))
 	}
 	item, err := svc.Item(ctx, alice, itemID)
-	if err != nil || item.Title() != "secret" || item.Done() {
+	if err != nil || item.Title().String() != "secret" || item.Done() {
 		t.Errorf("alice's item changed: %+v, %v", item, err)
 	}
 }
@@ -250,7 +250,7 @@ func TestUpdatesRetryAfterConcurrentModification(t *testing.T) {
 
 	list, _ := svc.List(ctx, alice, listID)
 	item, _ := svc.Item(ctx, alice, itemID)
-	if list.Title() != "L2" || !item.Done() {
+	if list.Title().String() != "L2" || !item.Done() {
 		t.Errorf("updates not applied: %+v %+v", list, item)
 	}
 }
@@ -264,7 +264,7 @@ func TestUpdatesGiveUpAfterMaxAttempts(t *testing.T) {
 	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); !errors.Is(err, domain.ErrConcurrentUpdate) {
 		t.Errorf("err = %v, want %v", err, domain.ErrConcurrentUpdate)
 	}
-	if list, _ := svc.List(ctx, alice, listID); list.Title() != "L" {
-		t.Errorf("title = %q, want unchanged", list.Title())
+	if list, _ := svc.List(ctx, alice, listID); list.Title().String() != "L" {
+		t.Errorf("title = %q, want unchanged", list.Title().String())
 	}
 }

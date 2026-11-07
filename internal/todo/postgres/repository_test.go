@@ -144,7 +144,7 @@ func TestUpdateRejectsStaleVersions(t *testing.T) {
 	if err := lists.Update(ctx, listB); !errors.Is(err, domain.ErrConcurrentUpdate) {
 		t.Errorf("stale list update: err = %v, want %v", err, domain.ErrConcurrentUpdate)
 	}
-	if got, _ := lists.Get(ctx, owner, listID); got.Title() != "A" || got.Description() != "" || got.Version() != listA.Version()+1 {
+	if got, _ := lists.Get(ctx, owner, listID); got.Title().String() != "A" || got.Description().String() != "" || got.Version() != listA.Version()+1 {
 		t.Errorf("list after race = %+v", got)
 	}
 

@@ -38,7 +38,7 @@ func (r *ListRepository) Add(ctx context.Context, list domain.List) (int64, erro
 	var id int64
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO todo_lists (user_id, title, description) VALUES ($1, $2, $3) RETURNING id`,
-		list.OwnerID(), list.Title(), list.Description(),
+		list.OwnerID(), list.Title().String(), list.Description().String(),
 	).Scan(&id)
 	if postgres.IsForeignKeyViolation(err) {
 		return 0, domain.ErrOwnerNotFound
@@ -80,7 +80,7 @@ func (r *ListRepository) Update(ctx context.Context, list domain.List) error {
 	tag, err := r.db.Exec(ctx,
 		`UPDATE todo_lists SET title = $1, description = $2, version = version + 1
 		  WHERE id = $3 AND user_id = $4 AND version = $5`,
-		list.Title(), list.Description(), list.ID(), list.OwnerID(), list.Version())
+		list.Title().String(), list.Description().String(), list.ID(), list.OwnerID(), list.Version())
 	if err != nil || tag.RowsAffected() == 1 {
 		return err
 	}

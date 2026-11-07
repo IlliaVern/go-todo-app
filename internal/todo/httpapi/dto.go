@@ -37,7 +37,7 @@ type itemResponse struct {
 }
 
 func toListResponse(l domain.List) listResponse {
-	return listResponse{ID: l.ID(), Title: l.Title(), Description: l.Description()}
+	return listResponse{ID: l.ID(), Title: l.Title().String(), Description: l.Description().String()}
 }
 
 func toListResponses(lists []domain.List) []listResponse {
@@ -49,7 +49,7 @@ func toListResponses(lists []domain.List) []listResponse {
 }
 
 func toItemResponse(i domain.Item) itemResponse {
-	return itemResponse{ID: i.ID(), Title: i.Title(), Description: i.Description(), Done: i.Done()}
+	return itemResponse{ID: i.ID(), Title: i.Title().String(), Description: i.Description().String(), Done: i.Done()}
 }
 
 func toItemResponses(items []domain.Item) []itemResponse {

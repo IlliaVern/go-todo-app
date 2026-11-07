@@ -36,7 +36,7 @@ func TestNewList(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if list.OwnerID() != 7 || list.Title() != tt.title || list.Description() != tt.description || list.ID() != 0 {
+			if list.OwnerID() != 7 || list.Title().String() != tt.title || list.Description().String() != tt.description || list.ID() != 0 {
 				t.Errorf("got %+v", list)
 			}
 		})
@@ -65,8 +65,8 @@ func TestListApply(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if list.Title() != tt.wantTitle || list.Description() != tt.wantDescription {
-				t.Errorf("got title %q description %q, want %q %q", list.Title(), list.Description(), tt.wantTitle, tt.wantDescription)
+			if list.Title().String() != tt.wantTitle || list.Description().String() != tt.wantDescription {
+				t.Errorf("got title %q description %q, want %q %q", list.Title().String(), list.Description().String(), tt.wantTitle, tt.wantDescription)
 			}
 		})
 	}
@@ -82,5 +82,21 @@ func TestValidationErrorsAreTyped(t *testing.T) {
 	var invalid *domain.ValidationError
 	if errors.As(domain.ErrListNotFound, &invalid) {
 		t.Error("ErrListNotFound must not be a validation error")
+	}
+}
+
+func TestTextValueObjects(t *testing.T) {
+	if _, err := domain.NewTitle(" "); !errors.Is(err, domain.ErrTitleRequired) {
+		t.Errorf("blank title: %v", err)
+	}
+	title, err := domain.NewTitle("Groceries")
+	if err != nil || title.String() != "Groceries" {
+		t.Errorf("NewTitle = %q, %v", title, err)
+	}
+	if d, err := domain.NewDescription(""); err != nil || d.String() != "" {
+		t.Errorf("empty description should be valid: %q, %v", d, err)
+	}
+	if _, err := domain.NewDescription("a\x00"); !errors.Is(err, domain.ErrNULCharacter) {
+		t.Errorf("NUL description: %v", err)
 	}
 }

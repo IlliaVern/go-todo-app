@@ -12,7 +12,7 @@ func TestNewItem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.ListID() != 3 || item.Title() != "Milk" || item.Description() != "2 l" || item.Done() {
+	if item.ListID() != 3 || item.Title().String() != "Milk" || item.Description().String() != "2 l" || item.Done() {
 		t.Errorf("got %+v", item)
 	}
 
@@ -42,7 +42,7 @@ func TestItemApply(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if item.Title() != tt.wantTitle || item.Done() != tt.wantDone || item.Description() != "desc" {
+			if item.Title().String() != tt.wantTitle || item.Done() != tt.wantDone || item.Description().String() != "desc" {
 				t.Errorf("got %+v", item)
 			}
 		})

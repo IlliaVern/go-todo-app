@@ -6,8 +6,8 @@ package domain
 type List struct {
 	id          int64
 	ownerID     int64
-	title       string
-	description string
+	title       Title
+	description Description
 	// version increases on every saved update; repositories use it for
 	// optimistic concurrency control.
 	version int64
@@ -15,25 +15,24 @@ type List struct {
 
 // NewList creates a list that has not been persisted yet.
 func NewList(ownerID int64, title, description string) (List, error) {
-	if err := validateTitle(title); err != nil {
+	t, d, err := parseText(title, description)
+	if err != nil {
 		return List{}, err
 	}
-	if err := validateDescription(description); err != nil {
-		return List{}, err
-	}
-	return List{ownerID: ownerID, title: title, description: description}, nil
+	return List{ownerID: ownerID, title: t, description: d}, nil
 }
 
-// RestoreList rebuilds a persisted list. Only repositories call it.
+// RestoreList rebuilds a persisted list from trusted storage without
+// re-validating it. Only repositories call it.
 func RestoreList(id, ownerID int64, title, description string, version int64) List {
-	return List{id: id, ownerID: ownerID, title: title, description: description, version: version}
+	return List{id: id, ownerID: ownerID, title: Title{title}, description: Description{description}, version: version}
 }
 
-func (l List) ID() int64           { return l.id }
-func (l List) OwnerID() int64      { return l.ownerID }
-func (l List) Title() string       { return l.title }
-func (l List) Description() string { return l.description }
-func (l List) Version() int64      { return l.version }
+func (l List) ID() int64                { return l.id }
+func (l List) OwnerID() int64           { return l.ownerID }
+func (l List) Title() Title             { return l.title }
+func (l List) Description() Description { return l.description }
+func (l List) Version() int64           { return l.version }
 
 // ListPatch is a partial update; nil fields stay unchanged.
 type ListPatch struct {
@@ -48,7 +47,7 @@ func (l *List) Apply(p ListPatch) error {
 		return ErrEmptyUpdate
 	}
 
-	title, description := l.title, l.description
+	title, description := l.title.String(), l.description.String()
 	if p.Title != nil {
 		title = *p.Title
 	}
@@ -56,13 +55,10 @@ func (l *List) Apply(p ListPatch) error {
 		description = *p.Description
 	}
 
-	if err := validateTitle(title); err != nil {
+	t, d, err := parseText(title, description)
+	if err != nil {
 		return err
 	}
-	if err := validateDescription(description); err != nil {
-		return err
-	}
-
-	l.title, l.description = title, description
+	l.title, l.description = t, d
 	return nil
 }
