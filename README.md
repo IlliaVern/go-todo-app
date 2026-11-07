@@ -74,10 +74,10 @@ make run               # go run ./cmd/api
 Tests:
 
 ```sh
-make test        # unit tests + end-to-end tests (starts postgres:18.4 via testcontainers; needs Docker)
-make test-unit   # unit tests only
+make test        # all tests; repository and end-to-end tests start postgres:18.4 via testcontainers
+make test-unit   # unit tests only, no Docker
 make e2e         # end-to-end tests against the running `make up` stack
-make check       # gofmt, go vet and all tests; run before pushing
+make check       # gofmt, go vet and all tests, failing if Docker is unavailable; run before pushing
 make vuln        # govulncheck
 ```
 

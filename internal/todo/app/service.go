@@ -56,7 +56,7 @@ func (s *Service) AddItem(ctx context.Context, ownerID, listID int64, title, des
 	if err != nil {
 		return 0, err
 	}
-	return s.items.Add(ctx, item)
+	return s.items.Add(ctx, ownerID, item)
 }
 
 func (s *Service) Items(ctx context.Context, ownerID, listID int64) ([]domain.Item, error) {

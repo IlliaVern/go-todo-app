@@ -20,8 +20,8 @@ type ListRepository interface {
 // item's list: an item in someone else's list is reported as ErrItemNotFound.
 type ItemRepository interface {
 	// Add stores a new item and returns its id, or ErrListNotFound when its
-	// list no longer exists.
-	Add(ctx context.Context, item Item) (int64, error)
+	// list does not exist or is not owned by ownerID.
+	Add(ctx context.Context, ownerID int64, item Item) (int64, error)
 	Get(ctx context.Context, ownerID, itemID int64) (Item, error)
 	ListByList(ctx context.Context, ownerID, listID int64) ([]Item, error)
 	// Update saves title, description and done of an item previously returned by Get.

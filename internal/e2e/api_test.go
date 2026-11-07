@@ -1,8 +1,7 @@
 // Package e2e_test exercises the whole API over HTTP against a real
-// PostgreSQL. By default it starts postgres:18.4 with testcontainers and serves
-// the router in-process; set E2E_BASE_URL (e.g. http://localhost:8000 after
-// `make up`) to test a running deployment instead. Skipped with -short or
-// when Docker is unavailable.
+// PostgreSQL. By default it starts one with pgtest and serves the router
+// in-process; set E2E_BASE_URL (e.g. http://localhost:8000 after `make up`) to
+// test a running deployment instead.
 package e2e_test
 
 import (
@@ -21,49 +20,18 @@ import (
 
 	"github.com/IlliaVern/go-todo-app/internal/api"
 	"github.com/IlliaVern/go-todo-app/internal/identity/token"
-	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/IlliaVern/go-todo-app/internal/platform/postgres/pgtest"
 )
 
-const (
-	postgresImage = "postgres:18.4" // keep in sync with docker/compose.yaml
-	e2eSigningKey = "e2e-signing-key-0123456789abcdef"
-)
+const e2eSigningKey = "e2e-signing-key-0123456789abcdef"
 
 func startAPI(t *testing.T) string {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("end-to-end test skipped in -short mode")
-	}
 	if baseURL := os.Getenv("E2E_BASE_URL"); baseURL != "" {
 		return strings.TrimSuffix(baseURL, "/")
 	}
-	testcontainers.SkipIfProviderIsNotHealthy(t)
 
-	ctx := t.Context()
-	pg, err := tcpostgres.Run(ctx, postgresImage,
-		tcpostgres.WithDatabase("todo"),
-		tcpostgres.WithUsername("postgres"),
-		tcpostgres.WithPassword("postgres"),
-		tcpostgres.WithInitScripts("../../schema/000001_init.up.sql"),
-		tcpostgres.BasicWaitStrategies(),
-	)
-	testcontainers.CleanupContainer(t, pg)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-
-	dsn, err := pg.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := postgres.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
+	db := pgtest.Start(t)
 	handler, err := api.NewHandler(db, e2eSigningKey, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)

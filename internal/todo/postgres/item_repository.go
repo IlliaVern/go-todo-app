@@ -30,13 +30,16 @@ func NewItemRepository(db *sqlx.DB) *ItemRepository {
 	return &ItemRepository{db: db}
 }
 
-func (r *ItemRepository) Add(ctx context.Context, item domain.Item) (int64, error) {
+func (r *ItemRepository) Add(ctx context.Context, ownerID int64, item domain.Item) (int64, error) {
 	var id int64
+	// Inserting through a SELECT on the owner's list enforces ownership in SQL.
 	err := r.db.QueryRowContext(ctx,
-		`INSERT INTO todo_items (list_id, title, description, done) VALUES ($1, $2, $3, $4) RETURNING id`,
-		item.ListID(), item.Title(), item.Description(), item.Done(),
+		`INSERT INTO todo_items (list_id, title, description, done)
+		 SELECT tl.id, $2, $3, $4 FROM todo_lists tl WHERE tl.id = $1 AND tl.user_id = $5
+		 RETURNING id`,
+		item.ListID(), item.Title(), item.Description(), item.Done(), ownerID,
 	).Scan(&id)
-	if postgres.IsForeignKeyViolation(err) {
+	if errors.Is(err, sql.ErrNoRows) || postgres.IsForeignKeyViolation(err) {
 		return 0, domain.ErrListNotFound
 	}
 	return id, err

@@ -69,8 +69,8 @@ func (s memLists) Delete(ctx context.Context, ownerID, listID int64) error {
 	return nil
 }
 
-func (s memItems) Add(_ context.Context, it domain.Item) (int64, error) {
-	if _, ok := s.lists[it.ListID()]; !ok {
+func (s memItems) Add(_ context.Context, ownerID int64, it domain.Item) (int64, error) {
+	if l, ok := s.lists[it.ListID()]; !ok || l.OwnerID() != ownerID {
 		return 0, domain.ErrListNotFound
 	}
 	s.nextID++

@@ -25,10 +25,10 @@ run: ## Run the API on the host (needs `make infra` and a .env file)
 build: ## Build the API binary into bin/
 	go build -trimpath -o bin/todo-app ./cmd/api
 
-test: ## Run all tests with the race detector (end-to-end tests start PostgreSQL in Docker)
+test: ## Run all tests with the race detector (Docker-backed tests skip if Docker is down)
 	go test -race ./...
 
-test-unit: ## Run tests without Docker (skips end-to-end tests)
+test-unit: ## Run tests without Docker (skips repository and end-to-end tests)
 	go test -race -short ./...
 
 e2e: ## Run the end-to-end tests against the stack started by `make up`
@@ -40,8 +40,9 @@ vet: ## Run go vet
 fmt: ## Format Go sources
 	gofmt -w .
 
-check: vet test ## Run all local checks (gofmt, vet, tests)
+check: vet ## Run all local checks (gofmt, vet, all tests; fails if Docker is unavailable)
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; echo "gofmt: files above need formatting"; exit 1; }
+	REQUIRE_DOCKER=1 go test -race ./...
 
 vuln: ## Scan dependencies for known vulnerabilities
 	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
