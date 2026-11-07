@@ -6,7 +6,7 @@ import (
 )
 
 type TodoItemService struct {
-	repo repository.TodoItem
+	repo     repository.TodoItem
 	listRepo repository.TodoList
 }
 

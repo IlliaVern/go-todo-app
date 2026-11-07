@@ -32,7 +32,7 @@ func (h *Handler) createItem(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, map[string]interface{}{
+	c.JSON(http.StatusOK, map[string]any{
 		"id": id,
 	})
 }

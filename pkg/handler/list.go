@@ -26,7 +26,7 @@ func (h *Handler) createList(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, map[string]interface{}{
+	c.JSON(http.StatusOK, map[string]any{
 		"id": id,
 	})
 }
