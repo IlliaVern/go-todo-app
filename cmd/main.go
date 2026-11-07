@@ -13,7 +13,6 @@ import (
 	"github.com/IlliaVern/go-todo-app/pkg/repository"
 	"github.com/IlliaVern/go-todo-app/pkg/service"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
