@@ -9,7 +9,7 @@ import (
 
 type Authorization interface {
 	CreateUser(ctx context.Context, user todo.User) (int, error)
-	GetUser(ctx context.Context, username, password string) (todo.User, error)
+	GetUser(ctx context.Context, username string) (todo.User, error)
 }
 
 type TodoList interface {

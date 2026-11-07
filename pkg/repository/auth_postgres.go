@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/IlliaVern/go-todo-app"
@@ -16,6 +18,7 @@ func NewAuthPostgres(db *sqlx.DB) *AuthPostgres {
 	return &AuthPostgres{db: db}
 }
 
+// CreateUser stores the user; user.Password must already contain the password hash.
 func (r *AuthPostgres) CreateUser(ctx context.Context, user todo.User) (int, error) {
 	var id int
 	query := fmt.Sprintf("INSERT INTO %s (name, username, password_hash) values ($1, $2, $3) RETURNING id", usersTable)
@@ -28,10 +31,18 @@ func (r *AuthPostgres) CreateUser(ctx context.Context, user todo.User) (int, err
 	return id, nil
 }
 
-func (r *AuthPostgres) GetUser(ctx context.Context, username, password string) (todo.User, error) {
+// GetUser returns the user with the given username; Password holds the stored password hash.
+func (r *AuthPostgres) GetUser(ctx context.Context, username string) (todo.User, error) {
 	var user todo.User
-	query := fmt.Sprintf("SELECT id FROM %s WHERE username = $1 AND password_hash = $2", usersTable)
-	err := r.db.GetContext(ctx, &user, query, username, password)
+	query := fmt.Sprintf("SELECT id, name, username, password_hash FROM %s WHERE username = $1", usersTable)
 
-	return user, err
+	row := r.db.QueryRowContext(ctx, query, username)
+	if err := row.Scan(&user.Id, &user.Name, &user.Username, &user.Password); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return todo.User{}, todo.ErrNotFound
+		}
+		return todo.User{}, err
+	}
+
+	return user, nil
 }

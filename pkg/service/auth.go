@@ -2,21 +2,26 @@ package service
 
 import (
 	"context"
-	"crypto/sha1"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/IlliaVern/go-todo-app"
 	"github.com/IlliaVern/go-todo-app/pkg/repository"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
-const (
-	salt       = "dkjfbng3848bg8g2bbfbbd828dn22@92"
-	signingKey = "u6fv6e5wschb6r6ur6evchsr55d5xcxjgfxk"
-	tokenTTL   = 12 * time.Hour
-)
+const tokenTTL = 12 * time.Hour
+
+// MinSigningKeyLength is the minimum HS256 signing key size in bytes.
+const MinSigningKeyLength = 32
+
+// ErrInvalidCredentials is returned when the username is unknown or the password does not match.
+var ErrInvalidCredentials = errors.New("invalid username or password")
+
+// dummyHash is compared against when the user does not exist, so sign-in takes
+// roughly the same time for unknown usernames and wrong passwords.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
 
 type tokenClaims struct {
 	jwt.RegisteredClaims
@@ -24,23 +29,36 @@ type tokenClaims struct {
 }
 
 type AuthService struct {
-	repo repository.Authorization
+	repo       repository.Authorization
+	signingKey []byte
 }
 
-func NewAuthService(repo repository.Authorization) *AuthService {
-	return &AuthService{repo: repo}
+func NewAuthService(repo repository.Authorization, signingKey string) *AuthService {
+	return &AuthService{repo: repo, signingKey: []byte(signingKey)}
 }
 
 func (s *AuthService) CreateUser(ctx context.Context, user todo.User) (int, error) {
-	user.Password = generatePasswordHash(user.Password)
+	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return 0, err
+	}
+	user.Password = string(hash)
 
 	return s.repo.CreateUser(ctx, user)
 }
 
 func (s *AuthService) GenerateToken(ctx context.Context, username, password string) (string, error) {
-	user, err := s.repo.GetUser(ctx, username, generatePasswordHash(password))
+	user, err := s.repo.GetUser(ctx, username)
+	if errors.Is(err, todo.ErrNotFound) {
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return "", ErrInvalidCredentials
+	}
 	if err != nil {
 		return "", err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return "", ErrInvalidCredentials
 	}
 
 	now := time.Now()
@@ -52,12 +70,12 @@ func (s *AuthService) GenerateToken(ctx context.Context, username, password stri
 		UserId: user.Id,
 	})
 
-	return token.SignedString([]byte(signingKey))
+	return token.SignedString(s.signingKey)
 }
 
 func (s *AuthService) ParseToken(accessToken string) (int, error) {
 	token, err := jwt.ParseWithClaims(accessToken, &tokenClaims{}, func(token *jwt.Token) (any, error) {
-		return []byte(signingKey), nil
+		return s.signingKey, nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return 0, err
@@ -69,11 +87,4 @@ func (s *AuthService) ParseToken(accessToken string) (int, error) {
 	}
 
 	return claims.UserId, nil
-}
-
-func generatePasswordHash(password string) string {
-	hash := sha1.New()
-	hash.Write([]byte(password))
-
-	return fmt.Sprintf("%x", hash.Sum([]byte(salt)))
 }

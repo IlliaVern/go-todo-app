@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/IlliaVern/go-todo-app"
+	"github.com/IlliaVern/go-todo-app/pkg/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,6 +42,10 @@ func (h *Handler) signIn(c *gin.Context) {
 	}
 
 	token, err := h.services.Authorization.GenerateToken(c.Request.Context(), input.Username, input.Password)
+	if errors.Is(err, service.ErrInvalidCredentials) {
+		newErrorResponse(c, http.StatusUnauthorized, err.Error())
+		return
+	}
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return

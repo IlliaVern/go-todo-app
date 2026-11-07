@@ -42,6 +42,11 @@ func run() error {
 		return fmt.Errorf("init config: %w", err)
 	}
 
+	signingKey := viper.GetString("auth.signing_key")
+	if len(signingKey) < service.MinSigningKeyLength {
+		return fmt.Errorf("AUTH_SIGNING_KEY must be set and at least %d bytes long", service.MinSigningKeyLength)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -63,7 +68,7 @@ func run() error {
 	}()
 
 	repos := repository.NewRepository(db)
-	services := service.NewService(repos)
+	services := service.NewService(repos, signingKey)
 	handlers := handler.NewHandler(services)
 
 	srv := todo.NewServer(viper.GetString("port"), handlers.InitRoutes())
