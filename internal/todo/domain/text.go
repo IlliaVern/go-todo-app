@@ -18,6 +18,9 @@ func validateTitle(title string) error {
 	if utf8.RuneCountInString(title) > MaxTitleLength {
 		return ErrTitleTooLong
 	}
+	if containsNUL(title) {
+		return ErrNULCharacter
+	}
 	return nil
 }
 
@@ -25,5 +28,11 @@ func validateDescription(description string) error {
 	if utf8.RuneCountInString(description) > MaxDescriptionLength {
 		return ErrDescriptionTooLong
 	}
+	if containsNUL(description) {
+		return ErrNULCharacter
+	}
 	return nil
 }
+
+// containsNUL reports a character PostgreSQL text columns cannot store.
+func containsNUL(s string) bool { return strings.ContainsRune(s, 0) }

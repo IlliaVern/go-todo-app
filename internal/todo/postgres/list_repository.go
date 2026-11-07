@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
 	"github.com/jmoiron/sqlx"
 )
@@ -36,6 +37,9 @@ func (r *ListRepository) Add(ctx context.Context, list domain.List) (int64, erro
 		`INSERT INTO todo_lists (user_id, title, description) VALUES ($1, $2, $3) RETURNING id`,
 		list.OwnerID(), list.Title(), list.Description(),
 	).Scan(&id)
+	if postgres.IsForeignKeyViolation(err) {
+		return 0, domain.ErrOwnerNotFound
+	}
 	return id, err
 }
 

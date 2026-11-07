@@ -5,7 +5,8 @@ import "context"
 // ListRepository persists lists. Every lookup is scoped to the owner: a list
 // owned by someone else is reported as ErrListNotFound.
 type ListRepository interface {
-	// Add stores a new list and returns its id.
+	// Add stores a new list and returns its id, or ErrOwnerNotFound when the
+	// owner no longer exists.
 	Add(ctx context.Context, list List) (int64, error)
 	Get(ctx context.Context, ownerID, listID int64) (List, error)
 	ListByOwner(ctx context.Context, ownerID int64) ([]List, error)

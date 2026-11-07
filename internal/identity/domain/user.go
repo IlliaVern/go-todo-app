@@ -31,14 +31,16 @@ type ValidationError struct {
 func (e *ValidationError) Error() string { return e.msg }
 
 var (
-	ErrNameRequired      = &ValidationError{"name is required"}
-	ErrNameTooLong       = &ValidationError{fmt.Sprintf("name must be at most %d characters", MaxNameLength)}
-	ErrUsernameRequired  = &ValidationError{"username is required"}
-	ErrUsernameTooLong   = &ValidationError{fmt.Sprintf("username must be at most %d characters", MaxUsernameLength)}
-	ErrPasswordRequired  = &ValidationError{"password is required"}
-	ErrPasswordTooLong   = &ValidationError{fmt.Sprintf("password must be at most %d bytes", MaxPasswordBytes)}
-	ErrPasswordHashEmpty = errors.New("password hash is empty")
+	ErrNameRequired     = &ValidationError{"name is required"}
+	ErrNameTooLong      = &ValidationError{fmt.Sprintf("name must be at most %d characters", MaxNameLength)}
+	ErrUsernameRequired = &ValidationError{"username is required"}
+	ErrUsernameTooLong  = &ValidationError{fmt.Sprintf("username must be at most %d characters", MaxUsernameLength)}
+	ErrPasswordRequired = &ValidationError{"password is required"}
+	ErrPasswordTooLong  = &ValidationError{fmt.Sprintf("password must be at most %d bytes", MaxPasswordBytes)}
+	ErrNULCharacter     = &ValidationError{"name and username must not contain NUL characters"}
 )
+
+var ErrPasswordHashEmpty = errors.New("password hash is empty")
 
 // User is an aggregate root: a registered account. It holds the password
 // hash only, never the plain password.
@@ -51,19 +53,31 @@ type User struct {
 
 // NewUser creates a user that has not been persisted yet.
 func NewUser(name, username, passwordHash string) (User, error) {
-	switch {
-	case strings.TrimSpace(name) == "":
-		return User{}, ErrNameRequired
-	case utf8.RuneCountInString(name) > MaxNameLength:
-		return User{}, ErrNameTooLong
-	case strings.TrimSpace(username) == "":
-		return User{}, ErrUsernameRequired
-	case utf8.RuneCountInString(username) > MaxUsernameLength:
-		return User{}, ErrUsernameTooLong
-	case passwordHash == "":
+	if err := ValidateProfile(name, username); err != nil {
+		return User{}, err
+	}
+	if passwordHash == "" {
 		return User{}, ErrPasswordHashEmpty
 	}
 	return User{name: name, username: username, passwordHash: passwordHash}, nil
+}
+
+// ValidateProfile checks name and username, so callers can reject bad input
+// before paying for password hashing.
+func ValidateProfile(name, username string) error {
+	switch {
+	case strings.TrimSpace(name) == "":
+		return ErrNameRequired
+	case utf8.RuneCountInString(name) > MaxNameLength:
+		return ErrNameTooLong
+	case strings.TrimSpace(username) == "":
+		return ErrUsernameRequired
+	case utf8.RuneCountInString(username) > MaxUsernameLength:
+		return ErrUsernameTooLong
+	case strings.ContainsRune(name, 0), strings.ContainsRune(username, 0):
+		return ErrNULCharacter
+	}
+	return nil
 }
 
 // RestoreUser rebuilds a persisted user. Only repositories call it.

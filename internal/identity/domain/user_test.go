@@ -19,6 +19,8 @@ func TestNewUser(t *testing.T) {
 		{name: "empty username", fullName: "Ada", username: "", hash: "h", wantErr: domain.ErrUsernameRequired},
 		{name: "long username", fullName: "Ada", username: strings.Repeat("u", 256), hash: "h", wantErr: domain.ErrUsernameTooLong},
 		{name: "missing hash", fullName: "Ada", username: "ada", hash: "", wantErr: domain.ErrPasswordHashEmpty},
+		{name: "NUL in name", fullName: "A\x00da", username: "ada", hash: "h", wantErr: domain.ErrNULCharacter},
+		{name: "NUL in username", fullName: "Ada", username: "a\x00da", hash: "h", wantErr: domain.ErrNULCharacter},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 )
@@ -47,6 +48,9 @@ func NewService(users domain.UserRepository, hasher PasswordHasher, tokens Token
 
 // SignUp registers a user and returns its id.
 func (s *Service) SignUp(ctx context.Context, name, username, password string) (int64, error) {
+	if err := domain.ValidateProfile(name, username); err != nil {
+		return 0, err
+	}
 	if err := domain.ValidatePassword(password); err != nil {
 		return 0, err
 	}
@@ -63,6 +67,12 @@ func (s *Service) SignUp(ctx context.Context, name, username, password string) (
 
 // SignIn checks the credentials and returns an access token, or ErrInvalidCredentials.
 func (s *Service) SignIn(ctx context.Context, username, password string) (string, error) {
+	// A NUL byte cannot match any stored username, and PostgreSQL rejects it.
+	if strings.ContainsRune(username, 0) {
+		s.hasher.Matches(s.dummyHash, password)
+		return "", ErrInvalidCredentials
+	}
+
 	user, err := s.users.ByUsername(ctx, username)
 	if errors.Is(err, domain.ErrUserNotFound) {
 		s.hasher.Matches(s.dummyHash, password)

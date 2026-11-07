@@ -20,12 +20,16 @@ import (
 	"time"
 
 	"github.com/IlliaVern/go-todo-app/internal/api"
+	"github.com/IlliaVern/go-todo-app/internal/identity/token"
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-const postgresImage = "postgres:18.4" // keep in sync with docker/compose.yaml
+const (
+	postgresImage = "postgres:18.4" // keep in sync with docker/compose.yaml
+	e2eSigningKey = "e2e-signing-key-0123456789abcdef"
+)
 
 func startAPI(t *testing.T) string {
 	t.Helper()
@@ -60,7 +64,7 @@ func startAPI(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	handler, err := api.NewHandler(db, "e2e-signing-key-0123456789abcdef", slog.New(slog.DiscardHandler))
+	handler, err := api.NewHandler(db, e2eSigningKey, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +195,8 @@ func TestAPI(t *testing.T) {
 		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": ""}), http.StatusBadRequest, nil)
 		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": strings.Repeat("p", 73)}), http.StatusBadRequest, nil)
 		anon.expect(anon.do("POST", "/auth/sign-up", `{"name":`), http.StatusBadRequest, nil)
+		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B\x00", "username": username + "-c", "password": "x"}), http.StatusBadRequest, nil)
+		anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": "a\x00b", "password": "x"}), http.StatusUnauthorized, nil)
 
 		anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": username, "password": "wrong"}), http.StatusUnauthorized, &msg)
 		wrongPassword := msg.Message
@@ -227,7 +233,27 @@ func TestAPI(t *testing.T) {
 			})
 		}
 
-		user.expect(user.do("GET", "/auth/api/lists/", nil), http.StatusNotFound, nil)
+		var msg messageBody
+		user.expect(user.do("GET", "/auth/api/lists/", nil), http.StatusNotFound, &msg)
+		if msg.Message != "route not found" {
+			t.Errorf("unknown route message = %q, want JSON error", msg.Message)
+		}
+	})
+
+	t.Run("token for a user that no longer exists", func(t *testing.T) {
+		if os.Getenv("E2E_BASE_URL") != "" {
+			t.Skip("needs the in-process server's signing key")
+		}
+		issuer, err := token.NewJWT(e2eSigningKey, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, err := issuer.Issue(987654321)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ghost := client{t: t, base: base, token: tok}
+		ghost.expect(ghost.do("POST", "/api/lists/", map[string]string{"title": "x"}), http.StatusUnauthorized, nil)
 	})
 
 	t.Run("lists and items", func(t *testing.T) {
@@ -261,6 +287,7 @@ func TestAPI(t *testing.T) {
 		}
 		user.expect(user.do("PUT", listPath, map[string]string{"title": " "}), http.StatusBadRequest, nil)
 		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": ""}), http.StatusBadRequest, nil)
+		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "a\x00b"}), http.StatusBadRequest, nil)
 		user.expect(user.do("GET", "/api/lists/abc", nil), http.StatusBadRequest, nil)
 		user.expect(user.do("GET", "/api/lists/999999999", nil), http.StatusNotFound, nil)
 

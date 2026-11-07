@@ -234,6 +234,8 @@ func (h *Handler) deleteItem(c *gin.Context) {
 func writeError(c *gin.Context, err error) {
 	var invalid *domain.ValidationError
 	switch {
+	case errors.Is(err, domain.ErrOwnerNotFound):
+		httpx.Error(c, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, domain.ErrListNotFound), errors.Is(err, domain.ErrItemNotFound):
 		httpx.Error(c, http.StatusNotFound, err.Error())
 	case errors.As(err, &invalid):

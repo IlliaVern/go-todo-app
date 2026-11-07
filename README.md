@@ -47,8 +47,8 @@ Errors come back as `{"message": "..."}`:
 
 | Status | When |
 |---|---|
-| 400 | Malformed JSON, invalid id, failed validation: blank title, a field over 255 characters, password empty or over 72 bytes, or an update with no fields |
-| 401 | Missing or invalid token, or wrong username or password |
+| 400 | Malformed JSON, invalid id, failed validation: blank title, a field over 255 characters or containing a NUL character, password empty or over 72 bytes, or an update with no fields |
+| 401 | Missing or invalid token, a token for a user that no longer exists, or wrong username or password |
 | 404 | The list or item doesn't exist or belongs to another user |
 | 409 | Username already taken |
 | 500 | Unexpected failure. Details are logged, not returned |

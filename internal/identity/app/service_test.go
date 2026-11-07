@@ -34,10 +34,16 @@ func (f *fakeUsers) ByUsername(_ context.Context, username string) (domain.User,
 	return u, nil
 }
 
-// fakeHasher "hashes" by prefixing and records every comparison.
-type fakeHasher struct{ compared []string }
+// fakeHasher "hashes" by prefixing and records every call.
+type fakeHasher struct {
+	hashed   int
+	compared []string
+}
 
-func (h *fakeHasher) Hash(p string) (string, error) { return "hashed:" + p, nil }
+func (h *fakeHasher) Hash(p string) (string, error) {
+	h.hashed++
+	return "hashed:" + p, nil
+}
 func (h *fakeHasher) Matches(hash, p string) bool {
 	h.compared = append(h.compared, hash)
 	return hash == "hashed:"+p
@@ -126,6 +132,28 @@ func TestSignInRejectsBadCredentials(t *testing.T) {
 	}
 	if len(hasher.compared) != 1 {
 		t.Errorf("unknown user: %d hash comparisons, want 1 to keep timing uniform", len(hasher.compared))
+	}
+}
+
+func TestSignUpValidatesProfileBeforeHashing(t *testing.T) {
+	svc, hasher := newService(t)
+	hasher.hashed = 0 // ignore the dummy hash computed by NewService
+
+	if _, err := svc.SignUp(context.Background(), " ", "ada", "s3cret"); !errors.Is(err, domain.ErrNameRequired) {
+		t.Fatalf("err = %v, want %v", err, domain.ErrNameRequired)
+	}
+	if hasher.hashed != 0 {
+		t.Errorf("password hashed %d times for an invalid profile, want 0", hasher.hashed)
+	}
+}
+
+func TestSignInRejectsNULUsername(t *testing.T) {
+	svc, hasher := newService(t)
+	if _, err := svc.SignIn(context.Background(), "a\x00da", "pw"); !errors.Is(err, app.ErrInvalidCredentials) {
+		t.Errorf("err = %v, want %v", err, app.ErrInvalidCredentials)
+	}
+	if len(hasher.compared) != 1 {
+		t.Errorf("%d hash comparisons, want 1 to keep timing uniform", len(hasher.compared))
 	}
 }
 

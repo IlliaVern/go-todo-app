@@ -24,6 +24,8 @@ func TestNewList(t *testing.T) {
 		{name: "title at limit", title: strings.Repeat("я", 255)},
 		{name: "title over limit", title: strings.Repeat("я", 256), wantErr: domain.ErrTitleTooLong},
 		{name: "description over limit", title: "t", description: strings.Repeat("a", 256), wantErr: domain.ErrDescriptionTooLong},
+		{name: "NUL in title", title: "a\x00b", wantErr: domain.ErrNULCharacter},
+		{name: "NUL in description", title: "t", description: "a\x00b", wantErr: domain.ErrNULCharacter},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,7 +73,7 @@ func TestListApply(t *testing.T) {
 }
 
 func TestValidationErrorsAreTyped(t *testing.T) {
-	for _, err := range []error{domain.ErrEmptyUpdate, domain.ErrTitleRequired, domain.ErrTitleTooLong, domain.ErrDescriptionTooLong} {
+	for _, err := range []error{domain.ErrEmptyUpdate, domain.ErrTitleRequired, domain.ErrTitleTooLong, domain.ErrDescriptionTooLong, domain.ErrNULCharacter} {
 		var invalid *domain.ValidationError
 		if !errors.As(err, &invalid) {
 			t.Errorf("%v is not a *ValidationError", err)
