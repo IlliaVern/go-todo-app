@@ -23,7 +23,6 @@ WORKDIR /app
 
 COPY --from=build /out/todo-app /app/todo-app
 
-ENV GIN_MODE=release
 EXPOSE 8000
 USER nonroot:nonroot
 

@@ -11,40 +11,47 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
 	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
 )
 
-func newRouter(t *testing.T) (*gin.Engine, *bytes.Buffer) {
+func newHandler(t *testing.T) (http.Handler, *bytes.Buffer) {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	var buf bytes.Buffer
 	logger, err := logging.New(&buf, "debug")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	r := gin.New()
-	r.Use(httpx.RequestLogger(logger), httpx.Recovery())
-	r.GET("/ok", func(c *gin.Context) {
-		slog.New(logger.Handler()).InfoContext(c.Request.Context(), "inside handler")
-		httpx.OK(c)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", httpx.NotFound)
+	mux.HandleFunc("GET /ok", func(w http.ResponseWriter, r *http.Request) {
+		slog.New(logger.Handler()).InfoContext(r.Context(), "inside handler")
+		httpx.OK(w, r)
 	})
-	r.GET("/rejected", func(c *gin.Context) { httpx.Error(c, http.StatusNotFound, "thing not found") })
-	r.GET("/token", func(c *gin.Context) {
-		httpx.ErrorWithReason(c, http.StatusUnauthorized, "invalid token", "token is expired")
+	mux.HandleFunc("GET /things/{id}", func(w http.ResponseWriter, r *http.Request) {
+		httpx.Error(w, r, http.StatusNotFound, "thing not found")
 	})
-	r.GET("/failed", func(c *gin.Context) { httpx.InternalError(c, errors.New("db is down")) })
-	r.GET("/panic", func(*gin.Context) { panic("boom") })
-	return r, &buf
+	mux.HandleFunc("GET /token", func(w http.ResponseWriter, r *http.Request) {
+		httpx.ErrorWithReason(w, r, http.StatusUnauthorized, "invalid token", "token is expired")
+	})
+	mux.HandleFunc("GET /failed", func(w http.ResponseWriter, r *http.Request) {
+		httpx.InternalError(w, r, errors.New("db is down"))
+	})
+	mux.HandleFunc("GET /panic", func(http.ResponseWriter, *http.Request) { panic("boom") })
+	mux.HandleFunc("POST /echo", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if httpx.DecodeJSON(w, r, &body) {
+			httpx.OK(w, r)
+		}
+	})
+	return httpx.RequestLogger(logger, httpx.Recovery(mux)), &buf
 }
 
 func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
 	var lines []map[string]any
-	for _, raw := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	for raw := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
 			t.Fatalf("log line is not JSON: %q", raw)
@@ -54,13 +61,13 @@ func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	return lines
 }
 
-func serve(r http.Handler, path, requestID string) *httptest.ResponseRecorder {
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+func serve(h http.Handler, method, path, requestID, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequestWithContext(context.Background(), method, path, strings.NewReader(body))
 	if requestID != "" {
 		req.Header.Set(httpx.RequestIDHeader, requestID)
 	}
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -69,20 +76,24 @@ func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 		path       string
 		wantStatus int
 		wantLevel  string
+		wantRoute  string
 		wantField  string
 		wantValue  string
 	}{
-		{path: "/rejected", wantStatus: 404, wantLevel: "WARN", wantField: "reason", wantValue: "thing not found"},
-		{path: "/token", wantStatus: 401, wantLevel: "WARN", wantField: "reason", wantValue: "token is expired"},
-		{path: "/failed", wantStatus: 500, wantLevel: "ERROR", wantField: "error", wantValue: "db is down"},
-		{path: "/missing", wantStatus: 404, wantLevel: "WARN", wantField: "path", wantValue: "/missing"},
+		{path: "/things/7", wantStatus: 404, wantLevel: "WARN", wantRoute: "/things/{id}", wantField: "reason", wantValue: "thing not found"},
+		{path: "/token", wantStatus: 401, wantLevel: "WARN", wantRoute: "/token", wantField: "reason", wantValue: "token is expired"},
+		{path: "/failed", wantStatus: 500, wantLevel: "ERROR", wantRoute: "/failed", wantField: "error", wantValue: "db is down"},
+		{path: "/missing", wantStatus: 404, wantLevel: "WARN", wantRoute: "/", wantField: "path", wantValue: "/missing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			r, buf := newRouter(t)
-			rec := serve(r, tt.path, "")
+			h, buf := newHandler(t)
+			rec := serve(h, http.MethodGet, tt.path, "", "")
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Errorf("Content-Type = %q", ct)
 			}
 
 			lines := logLines(t, buf)
@@ -90,7 +101,7 @@ func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 				t.Fatalf("got %d log lines, want 1: %v", len(lines), lines)
 			}
 			line := lines[0]
-			if line["msg"] != "request" || line["level"] != tt.wantLevel || line["status"] != float64(tt.wantStatus) {
+			if line["msg"] != "request" || line["level"] != tt.wantLevel || line["status"] != float64(tt.wantStatus) || line["route"] != tt.wantRoute {
 				t.Errorf("line = %v", line)
 			}
 			if line[tt.wantField] != tt.wantValue {
@@ -104,8 +115,8 @@ func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 }
 
 func TestRequestLoggerPropagatesRequestID(t *testing.T) {
-	r, buf := newRouter(t)
-	rec := serve(r, "/ok", "client-abc-123")
+	h, buf := newHandler(t)
+	rec := serve(h, http.MethodGet, "/ok", "client-abc-123", "")
 	if got := rec.Header().Get(httpx.RequestIDHeader); got != "client-abc-123" {
 		t.Errorf("response request id = %q", got)
 	}
@@ -120,10 +131,10 @@ func TestRequestLoggerPropagatesRequestID(t *testing.T) {
 		}
 	}
 	access := lines[1]
-	if access["level"] != "INFO" || access["route"] != "/ok" || access["method"] != "GET" {
+	if access["level"] != "INFO" || access["route"] != "/ok" || access["method"] != "GET" || access["bytes"] != float64(rec.Body.Len()) {
 		t.Errorf("access line = %v", access)
 	}
-	for _, field := range []string{"duration_ms", "bytes", "client_ip"} {
+	for _, field := range []string{"duration_ms", "client_ip"} {
 		if _, ok := access[field]; !ok {
 			t.Errorf("access line lacks %s", field)
 		}
@@ -132,22 +143,43 @@ func TestRequestLoggerPropagatesRequestID(t *testing.T) {
 
 func TestRequestLoggerReplacesUnsafeRequestID(t *testing.T) {
 	for _, id := range []string{"has space", "new\nline", strings.Repeat("a", 129)} {
-		r, _ := newRouter(t)
-		if got := serve(r, "/ok", id).Header().Get(httpx.RequestIDHeader); got == id || got == "" {
+		h, _ := newHandler(t)
+		if got := serve(h, http.MethodGet, "/ok", id, "").Header().Get(httpx.RequestIDHeader); got == id || got == "" {
 			t.Errorf("incoming id %q: response id = %q, want a generated one", id, got)
 		}
 	}
 }
 
 func TestRecoveryLogsPanicAs500(t *testing.T) {
-	r, buf := newRouter(t)
-	rec := serve(r, "/panic", "")
+	h, buf := newHandler(t)
+	rec := serve(h, http.MethodGet, "/panic", "", "")
 	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "internal server error") {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body)
 	}
 	lines := logLines(t, buf)
 	if len(lines) != 1 || lines[0]["level"] != "ERROR" || !strings.HasPrefix(lines[0]["error"].(string), "panic: boom") {
 		t.Errorf("lines = %v", lines)
+	}
+}
+
+func TestDecodeJSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+	}{
+		{name: "valid", body: `{"a":"b"}`, wantStatus: 200},
+		{name: "malformed", body: `{"a":`, wantStatus: 400},
+		{name: "empty", body: ``, wantStatus: 400},
+		{name: "too large", body: `{"a":"` + strings.Repeat("x", httpx.MaxBodyBytes) + `"}`, wantStatus: 413},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _ := newHandler(t)
+			if rec := serve(h, http.MethodPost, "/echo", "", tt.body); rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d: %s", rec.Code, tt.wantStatus, rec.Body)
+			}
+		})
 	}
 }
 

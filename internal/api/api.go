@@ -1,5 +1,5 @@
 // Package api is the composition root: it wires the bounded contexts'
-// repositories, services and HTTP adapters into one router.
+// repositories, services and HTTP adapters into one handler.
 package api
 
 import (
@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	identityapp "github.com/IlliaVern/go-todo-app/internal/identity/app"
@@ -37,21 +36,12 @@ func NewHandler(db *pgxpool.Pool, signingKey string, logger *slog.Logger) (http.
 	}
 	todoSvc := todoapp.NewService(todopg.NewListRepository(db), todopg.NewItemRepository(db))
 
-	router := gin.New()
-	// client_ip is the direct peer; no proxy headers are trusted.
-	if err := router.SetTrustedProxies(nil); err != nil {
-		return nil, err
-	}
-	router.Use(httpx.RequestLogger(logger), httpx.Recovery())
-	router.NoRoute(func(c *gin.Context) {
-		httpx.Error(c, http.StatusNotFound, "route not found")
-	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", httpx.NotFound)
 
 	identity := identityhttp.NewHandler(identitySvc)
-	identity.Register(router)
+	identity.Register(mux)
+	todohttp.NewHandler(todoSvc).Register(mux, identity.Authenticate)
 
-	protected := router.Group("/api", identity.Authenticate)
-	todohttp.NewHandler(todoSvc).Register(protected)
-
-	return router, nil
+	return httpx.RequestLogger(logger, httpx.Recovery(mux)), nil
 }

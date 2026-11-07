@@ -1,11 +1,9 @@
-// Package httpapi exposes the todo use cases over HTTP with gin.
+// Package httpapi exposes the todo use cases over net/http.
 package httpapi
 
 import (
 	"errors"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
 	"github.com/IlliaVern/go-todo-app/internal/todo/app"
@@ -20,228 +18,226 @@ func NewHandler(svc *app.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Register mounts the routes on r, which must already authenticate the caller.
-func (h *Handler) Register(r gin.IRouter) {
-	lists := r.Group("/lists")
-	{
-		lists.POST("/", h.createList)
-		lists.GET("/", h.getAllLists)
-		lists.GET("/:id", h.getListByID)
-		lists.PUT("/:id", h.updateList)
-		lists.DELETE("/:id", h.deleteList)
-
-		items := lists.Group(":id/items")
-		{
-			items.POST("/", h.createItem)
-			items.GET("/", h.getAllItems)
-		}
+// Register mounts the routes on mux behind auth, which must authenticate the
+// caller. Collection routes answer with and without a trailing slash.
+func (h *Handler) Register(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
+	handle := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, auth(fn)) }
+	collection := func(method, path string, fn http.HandlerFunc) {
+		handle(method+" "+path, fn)
+		handle(method+" "+path+"/{$}", fn)
 	}
 
-	items := r.Group("/items")
-	{
-		items.GET("/:id", h.getItemByID)
-		items.PUT("/:id", h.updateItem)
-		items.DELETE("/:id", h.deleteItem)
-	}
+	collection(http.MethodPost, "/api/lists", h.createList)
+	collection(http.MethodGet, "/api/lists", h.getAllLists)
+	handle("GET /api/lists/{id}", h.getListByID)
+	handle("PUT /api/lists/{id}", h.updateList)
+	handle("DELETE /api/lists/{id}", h.deleteList)
+
+	collection(http.MethodPost, "/api/lists/{id}/items", h.createItem)
+	collection(http.MethodGet, "/api/lists/{id}/items", h.getAllItems)
+
+	handle("GET /api/items/{id}", h.getItemByID)
+	handle("PUT /api/items/{id}", h.updateItem)
+	handle("DELETE /api/items/{id}", h.deleteItem)
 }
 
-func (h *Handler) createList(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
 	var req createRequest
-	if !httpx.BindJSON(c, &req) {
+	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 
-	id, err := h.svc.CreateList(c.Request.Context(), userID, req.Title, req.Description)
+	id, err := h.svc.CreateList(r.Context(), userID, req.Title, req.Description)
 	if err != nil {
-		writeError(c, err)
+		writeError(w, r, err)
 		return
 	}
-	c.JSON(http.StatusOK, httpx.IDResponse{ID: id})
+	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: id})
 }
 
-func (h *Handler) getAllLists(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) getAllLists(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
 
-	lists, err := h.svc.Lists(c.Request.Context(), userID)
+	lists, err := h.svc.Lists(r.Context(), userID)
 	if err != nil {
-		writeError(c, err)
+		writeError(w, r, err)
 		return
 	}
-	c.JSON(http.StatusOK, listsResponse{Data: toListResponses(lists)})
+	httpx.JSON(w, r, http.StatusOK, listsResponse{Data: toListResponses(lists)})
 }
 
-func (h *Handler) getListByID(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) getListByID(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	listID, ok := httpx.PathID(c)
+	listID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 
-	list, err := h.svc.List(c.Request.Context(), userID, listID)
+	list, err := h.svc.List(r.Context(), userID, listID)
 	if err != nil {
-		writeError(c, err)
+		writeError(w, r, err)
 		return
 	}
-	c.JSON(http.StatusOK, toListResponse(list))
+	httpx.JSON(w, r, http.StatusOK, toListResponse(list))
 }
 
-func (h *Handler) updateList(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) updateList(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	listID, ok := httpx.PathID(c)
+	listID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 	var req updateListRequest
-	if !httpx.BindJSON(c, &req) {
+	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 
 	patch := domain.ListPatch{Title: req.Title, Description: req.Description}
-	if err := h.svc.UpdateList(c.Request.Context(), userID, listID, patch); err != nil {
-		writeError(c, err)
+	if err := h.svc.UpdateList(r.Context(), userID, listID, patch); err != nil {
+		writeError(w, r, err)
 		return
 	}
-	httpx.OK(c)
+	httpx.OK(w, r)
 }
 
-func (h *Handler) deleteList(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) deleteList(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	listID, ok := httpx.PathID(c)
+	listID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.svc.DeleteList(c.Request.Context(), userID, listID); err != nil {
-		writeError(c, err)
+	if err := h.svc.DeleteList(r.Context(), userID, listID); err != nil {
+		writeError(w, r, err)
 		return
 	}
-	httpx.OK(c)
+	httpx.OK(w, r)
 }
 
-func (h *Handler) createItem(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	listID, ok := httpx.PathID(c)
+	listID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 	var req createRequest
-	if !httpx.BindJSON(c, &req) {
+	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 
-	id, err := h.svc.AddItem(c.Request.Context(), userID, listID, req.Title, req.Description)
+	id, err := h.svc.AddItem(r.Context(), userID, listID, req.Title, req.Description)
 	if err != nil {
-		writeError(c, err)
+		writeError(w, r, err)
 		return
 	}
-	c.JSON(http.StatusOK, httpx.IDResponse{ID: id})
+	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: id})
 }
 
-func (h *Handler) getAllItems(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) getAllItems(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	listID, ok := httpx.PathID(c)
+	listID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 
-	items, err := h.svc.Items(c.Request.Context(), userID, listID)
+	items, err := h.svc.Items(r.Context(), userID, listID)
 	if err != nil {
-		writeError(c, err)
+		writeError(w, r, err)
 		return
 	}
-	c.JSON(http.StatusOK, toItemResponses(items))
+	httpx.JSON(w, r, http.StatusOK, toItemResponses(items))
 }
 
-func (h *Handler) getItemByID(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) getItemByID(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	itemID, ok := httpx.PathID(c)
+	itemID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 
-	item, err := h.svc.Item(c.Request.Context(), userID, itemID)
+	item, err := h.svc.Item(r.Context(), userID, itemID)
 	if err != nil {
-		writeError(c, err)
+		writeError(w, r, err)
 		return
 	}
-	c.JSON(http.StatusOK, toItemResponse(item))
+	httpx.JSON(w, r, http.StatusOK, toItemResponse(item))
 }
 
-func (h *Handler) updateItem(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	itemID, ok := httpx.PathID(c)
+	itemID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 	var req updateItemRequest
-	if !httpx.BindJSON(c, &req) {
+	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 
 	patch := domain.ItemPatch{Title: req.Title, Description: req.Description, Done: req.Done}
-	if err := h.svc.UpdateItem(c.Request.Context(), userID, itemID, patch); err != nil {
-		writeError(c, err)
+	if err := h.svc.UpdateItem(r.Context(), userID, itemID, patch); err != nil {
+		writeError(w, r, err)
 		return
 	}
-	httpx.OK(c)
+	httpx.OK(w, r)
 }
 
-func (h *Handler) deleteItem(c *gin.Context) {
-	userID, ok := httpx.UserID(c)
+func (h *Handler) deleteItem(w http.ResponseWriter, r *http.Request) {
+	userID, ok := httpx.UserID(w, r)
 	if !ok {
 		return
 	}
-	itemID, ok := httpx.PathID(c)
+	itemID, ok := httpx.PathID(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.svc.DeleteItem(c.Request.Context(), userID, itemID); err != nil {
-		writeError(c, err)
+	if err := h.svc.DeleteItem(r.Context(), userID, itemID); err != nil {
+		writeError(w, r, err)
 		return
 	}
-	httpx.OK(c)
+	httpx.OK(w, r)
 }
 
 // writeError maps domain errors to HTTP statuses.
-func writeError(c *gin.Context, err error) {
+func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var invalid *domain.ValidationError
 	switch {
 	case errors.Is(err, domain.ErrOwnerNotFound):
-		httpx.Error(c, http.StatusUnauthorized, err.Error())
+		httpx.Error(w, r, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, domain.ErrListNotFound), errors.Is(err, domain.ErrItemNotFound):
-		httpx.Error(c, http.StatusNotFound, err.Error())
+		httpx.Error(w, r, http.StatusNotFound, err.Error())
 	case errors.As(err, &invalid):
-		httpx.Error(c, http.StatusBadRequest, err.Error())
+		httpx.Error(w, r, http.StatusBadRequest, err.Error())
 	default:
-		httpx.InternalError(c, err)
+		httpx.InternalError(w, r, err)
 	}
 }

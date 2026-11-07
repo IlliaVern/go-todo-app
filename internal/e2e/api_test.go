@@ -78,7 +78,7 @@ func (c client) do(method, path string, body any) response {
 
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
-		// Surface gin's trailing-slash redirects instead of following them.
+		// Fail on redirects instead of following them: the API never redirects.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	resp, err := httpClient.Do(req)
@@ -228,8 +228,12 @@ func TestAPI(t *testing.T) {
 		user := signUp(t, base)
 
 		var lists struct{ Data []listBody }
-		user.expect(user.do("GET", "/api/lists/", nil), http.StatusOK, nil)
-		if r := user.do("GET", "/api/lists/", nil); string(r.body) != `{"data":[]}` {
+		for _, path := range []string{"/api/lists/", "/api/lists"} {
+			if r := user.do("GET", path, nil); r.status != http.StatusOK {
+				t.Errorf("GET %s = %d, want 200 with or without trailing slash", path, r.status)
+			}
+		}
+		if r := user.do("GET", "/api/lists/", nil); strings.TrimSpace(string(r.body)) != `{"data":[]}` {
 			t.Errorf("empty lists body = %s, want {\"data\":[]}", r.body)
 		}
 
@@ -260,7 +264,7 @@ func TestAPI(t *testing.T) {
 		user.expect(user.do("GET", "/api/lists/999999999", nil), http.StatusNotFound, nil)
 
 		itemsPath := listPath + "/items/"
-		if r := user.do("GET", itemsPath, nil); r.status != http.StatusOK || string(r.body) != `[]` {
+		if r := user.do("GET", itemsPath, nil); r.status != http.StatusOK || strings.TrimSpace(string(r.body)) != `[]` {
 			t.Errorf("empty items = %d %s, want 200 []", r.status, r.body)
 		}
 

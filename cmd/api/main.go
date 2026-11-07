@@ -11,8 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/IlliaVern/go-todo-app/internal/api"
 	"github.com/IlliaVern/go-todo-app/internal/platform/config"
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpserver"
@@ -43,12 +41,6 @@ func run() error {
 		return err
 	}
 	slog.SetDefault(logger)
-
-	// gin's debug mode prints plain-text lines to stdout; keep stdout JSON
-	// unless debug mode is requested explicitly.
-	if os.Getenv(gin.EnvGinMode) == "" {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
