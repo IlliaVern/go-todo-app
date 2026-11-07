@@ -2,33 +2,45 @@
 #
 #   docker compose -f docker/compose.yaml up --build
 #
-# Values fall back to local-only defaults. To use the repository's .env instead,
-# pass it explicitly (`make up` does this automatically when .env exists):
+# Compose resolves .env from this directory, so the repository's root .env is
+# used only when passed explicitly (`make up` does this when .env exists):
 #
 #   docker compose -f docker/compose.yaml --env-file .env up --build
+#
+# Without it, local-only defaults apply. Ports are bound to 127.0.0.1 only.
 
 name: go-todo-app
 
 x-db-password: &db-password ${DB_PASSWORD:-postgres}
 
+# Docker rotates logs by size, not age: each container keeps at most
+# 5 compressed files of 10 MB, and the oldest file is dropped first.
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   postgres:
-    image: postgres:18.6-alpine
+    image: postgres:18.4
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: *db-password
       POSTGRES_DB: postgres
     ports:
-      - "5436:5432" # matches db.port in configs/config.yml for `go run` on the host
+      - "127.0.0.1:5436:5432" # matches db.port in configs/config.yml for `go run` on the host
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      # -h forces TCP: during first-time init the entrypoint runs a socket-only server.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
     restart: unless-stopped
+    logging: *logging
 
   migrate:
     image: migrate/migrate:v4.20.1
@@ -43,6 +55,7 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    logging: *logging
 
   app:
     build:
@@ -55,11 +68,14 @@ services:
       DB_PASSWORD: *db-password
       AUTH_SIGNING_KEY: ${AUTH_SIGNING_KEY:-local-dev-signing-key-do-not-use-in-production}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # Longer than the app's 10s shutdown timeout, so in-flight requests can finish.
+    stop_grace_period: 15s
     restart: unless-stopped
+    logging: *logging
 
 volumes:
   postgres-data:
