@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres/pgtest"
@@ -183,3 +184,21 @@ func TestUpdateRejectsStaleVersions(t *testing.T) {
 func second[T any](_ T, err error) error { return err }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestSchemaRejectsRowsThatBreakDomainInvariants(t *testing.T) {
+	db := pgtest.Start(t)
+	ctx := context.Background()
+	owner := insertUser(t, db, "owner")
+
+	for name, stmt := range map[string]string{
+		"blank list title": `INSERT INTO todo_lists (user_id, title) VALUES ($1, '   ')`,
+		"zero version":     `INSERT INTO todo_lists (user_id, title, version) VALUES ($1, 'L', 0)`,
+		"blank user name":  `INSERT INTO users (name, username, password_hash) VALUES (' ', 'blank-' || $1::bigint::text, 'h')`,
+	} {
+		_, err := db.Exec(ctx, stmt, owner)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Errorf("%s: err = %v, want a CHECK violation (23514)", name, err)
+		}
+	}
+}
