@@ -50,7 +50,6 @@ type User struct {
 	passwordHash string
 }
 
-// NewUser creates a user that has not been persisted yet.
 func NewUser(name Name, username Username, passwordHash string) (User, error) {
 	if passwordHash == "" {
 		return User{}, ErrPasswordHashEmpty
@@ -69,7 +68,6 @@ func (u User) Name() Name           { return u.name }
 func (u User) Username() Username   { return u.username }
 func (u User) PasswordHash() string { return u.passwordHash }
 
-// ValidatePassword checks a plain password against the password policy.
 func ValidatePassword(password string) error {
 	switch {
 	case password == "":
@@ -80,12 +78,10 @@ func ValidatePassword(password string) error {
 	return nil
 }
 
-// UserRepository persists users.
 type UserRepository interface {
 	// Add stores a new user and returns its id, or ErrUsernameTaken.
 	Add(ctx context.Context, user User) (int64, error)
 	// ByUsername returns the user or ErrUserNotFound.
 	ByUsername(ctx context.Context, username Username) (User, error)
-	// Exists reports whether a user with the id is still registered.
 	Exists(ctx context.Context, id int64) (bool, error)
 }

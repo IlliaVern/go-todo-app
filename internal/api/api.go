@@ -24,7 +24,6 @@ import (
 
 const tokenTTL = 12 * time.Hour
 
-// Options configures NewHandler.
 type Options struct {
 	SigningKey string
 	// AuthRequestsPerMinute limits /auth requests per client.
@@ -32,7 +31,6 @@ type Options struct {
 	Logger                *slog.Logger
 }
 
-// NewHandler returns the HTTP handler serving the whole API.
 func NewHandler(db *pgxpool.Pool, opts Options) (http.Handler, error) {
 	tokens, err := token.NewJWT(opts.SigningKey, tokenTTL)
 	if err != nil {

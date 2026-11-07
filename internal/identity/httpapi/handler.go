@@ -83,7 +83,6 @@ func (h *Handler) signIn(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// busy sheds load while password hashing is saturated.
 func busy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Retry-After", "2")
 	httpx.Error(w, r, http.StatusServiceUnavailable, app.ErrHasherBusy.Error())

@@ -11,7 +11,6 @@ type Item struct {
 	version     int64 // see List.version
 }
 
-// NewItem creates an undone item that has not been persisted yet.
 func NewItem(list ListID, title Title, description Description) Item {
 	return Item{listID: list, title: title, description: description}
 }

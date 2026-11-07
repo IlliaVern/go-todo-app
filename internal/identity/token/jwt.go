@@ -23,7 +23,7 @@ type JWT struct {
 	now func() time.Time
 }
 
-// NewJWT returns a manager issuing tokens valid for ttl.
+// NewJWT fails for keys shorter than MinKeyLength.
 func NewJWT(signingKey string, ttl time.Duration) (*JWT, error) {
 	if len(signingKey) < MinKeyLength {
 		return nil, fmt.Errorf("token signing key must be at least %d bytes", MinKeyLength)

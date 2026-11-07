@@ -8,7 +8,6 @@ import (
 // Name is a user's non-blank display name, at most MaxNameLength characters.
 type Name struct{ value string }
 
-// NewName validates s as a display name.
 func NewName(s string) (Name, error) {
 	switch {
 	case strings.TrimSpace(s) == "":
@@ -28,7 +27,6 @@ func (n Name) String() string { return n.value }
 // username.
 type Username struct{ value string }
 
-// NewUsername validates s and normalises it to lowercase.
 func NewUsername(s string) (Username, error) {
 	switch {
 	case strings.TrimSpace(s) == "":

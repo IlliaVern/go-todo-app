@@ -34,12 +34,11 @@ func (c Config) DSN() string {
 	return u.String()
 }
 
-// Open connects using cfg and verifies the connection with a ping.
 func Open(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	return Connect(ctx, cfg.DSN())
 }
 
-// Connect creates a pool for dsn and verifies it with a ping.
+// Connect creates a pool and pings it, so bad settings fail at startup.
 func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -60,10 +59,8 @@ const (
 	foreignKeyViolation = "23503"
 )
 
-// IsUniqueViolation reports whether err is a UNIQUE constraint violation.
 func IsUniqueViolation(err error) bool { return hasCode(err, uniqueViolation) }
 
-// IsForeignKeyViolation reports whether err is a FOREIGN KEY constraint violation.
 func IsForeignKeyViolation(err error) bool { return hasCode(err, foreignKeyViolation) }
 
 func hasCode(err error, code string) bool {

@@ -22,11 +22,9 @@ var (
 // free hashing slot and fail when ctx ends first.
 type PasswordHasher interface {
 	Hash(ctx context.Context, password string) (string, error)
-	// Matches reports whether password corresponds to hash.
 	Matches(ctx context.Context, hash, password string) (bool, error)
 }
 
-// TokenManager issues and verifies access tokens carrying a user id.
 type TokenManager interface {
 	Issue(userID int64) (string, error)
 	Verify(token string) (int64, error)
@@ -49,7 +47,6 @@ func NewService(users domain.UserRepository, hasher PasswordHasher, tokens Token
 	return &Service{users: users, hasher: hasher, tokens: tokens, dummyHash: dummyHash}, nil
 }
 
-// SignUp registers a user and returns its id.
 func (s *Service) SignUp(ctx context.Context, rawName, rawUsername, password string) (int64, error) {
 	// Validate everything before paying for password hashing.
 	name, err := domain.NewName(rawName)

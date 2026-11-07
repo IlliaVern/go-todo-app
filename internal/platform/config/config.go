@@ -34,7 +34,6 @@ func LoadServer() (Server, error) {
 	return s, nil
 }
 
-// DB holds the DB_* connection settings.
 type DB struct {
 	Host     string `env:"HOST" envDefault:"localhost"`
 	Port     string `env:"PORT" envDefault:"5436"`
@@ -44,7 +43,6 @@ type DB struct {
 	SSLMode  string `env:"SSLMODE" envDefault:"disable"`
 }
 
-// Postgres converts the settings to the connection config.
 func (d DB) Postgres() postgres.Config {
 	return postgres.Config{
 		Host:     d.Host,
@@ -56,7 +54,7 @@ func (d DB) Postgres() postgres.Config {
 	}
 }
 
-// Load parses the environment. Missing required variables are reported together.
+// Load reports all missing or invalid variables at once.
 func Load() (Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {

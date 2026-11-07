@@ -168,7 +168,6 @@ func validRequestID(id string) bool {
 	return true
 }
 
-// statusRecorder captures the status code and body size written by handlers.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int

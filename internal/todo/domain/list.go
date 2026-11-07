@@ -13,7 +13,6 @@ type List struct {
 	version int64
 }
 
-// NewList creates a list that has not been persisted yet.
 func NewList(owner OwnerID, title Title, description Description) List {
 	return List{ownerID: owner, title: title, description: description}
 }

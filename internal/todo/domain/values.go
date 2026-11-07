@@ -15,7 +15,6 @@ const (
 // characters. Its zero value is never valid; build one with NewTitle.
 type Title struct{ value string }
 
-// NewTitle validates s as a title.
 func NewTitle(s string) (Title, error) {
 	switch {
 	case strings.TrimSpace(s) == "":
@@ -34,7 +33,6 @@ func (t Title) String() string { return t.value }
 // MaxDescriptionLength characters; the zero value is the empty description.
 type Description struct{ value string }
 
-// NewDescription validates s as a description.
 func NewDescription(s string) (Description, error) {
 	switch {
 	case utf8.RuneCountInString(s) > MaxDescriptionLength:
@@ -47,7 +45,6 @@ func NewDescription(s string) (Description, error) {
 
 func (d Description) String() string { return d.value }
 
-// ParseText validates raw title and description input together.
 func ParseText(title, description string) (Title, Description, error) {
 	t, err := NewTitle(title)
 	if err != nil {

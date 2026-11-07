@@ -11,7 +11,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// idleTTL is how long an unused client bucket is kept.
 const idleTTL = 10 * time.Minute
 
 // RateLimiter is an in-memory, per-client token bucket. Clients are keyed by
@@ -82,7 +81,6 @@ func (l *RateLimiter) allow(key netip.Addr) bool {
 	return c.limiter.AllowN(now, 1)
 }
 
-// clientKey is the peer address, with IPv6 reduced to its /64 prefix.
 func clientKey(r *http.Request) netip.Addr {
 	addr, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {

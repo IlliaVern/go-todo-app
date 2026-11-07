@@ -21,7 +21,6 @@ import (
 // Image must match the postgres service in docker/compose.yaml.
 const Image = "postgres:18.4"
 
-// SkipUnlessDocker skips t when Docker tests are not wanted or possible.
 func SkipUnlessDocker(t *testing.T) {
 	t.Helper()
 	if os.Getenv("REQUIRE_DOCKER") != "" {

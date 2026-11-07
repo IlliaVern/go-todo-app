@@ -13,7 +13,6 @@ import (
 	"strconv"
 )
 
-// MaxBodyBytes bounds request bodies.
 const MaxBodyBytes = 1 << 20 // 1 MiB
 
 type errorResponse struct {
@@ -35,7 +34,6 @@ func Handle(mux *http.ServeMux, method, path string, h http.Handler) {
 	mux.Handle(method+" "+path+"/{$}", h)
 }
 
-// JSON writes v with the given status.
 func JSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -130,7 +128,6 @@ func PathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 
 type callerIDKey struct{}
 
-// WithCallerID returns a context carrying the authenticated caller's id.
 func WithCallerID(ctx context.Context, id int64) context.Context {
 	return context.WithValue(ctx, callerIDKey{}, id)
 }

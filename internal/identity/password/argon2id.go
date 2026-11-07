@@ -33,7 +33,6 @@ type Params struct {
 // (19 MiB, 2 iterations, 1 degree of parallelism).
 var DefaultParams = Params{Memory: 19 * 1024, Time: 2, Threads: 1, SaltLen: 16, KeyLen: 32}
 
-// ErrMalformedHash reports a stored hash that is not a supported argon2id PHC string.
 var ErrMalformedHash = errors.New("malformed argon2id hash")
 
 var b64 = base64.RawStdEncoding
@@ -58,8 +57,6 @@ func NewArgon2id() *Argon2id {
 	return NewArgon2idWithParams(DefaultParams, runtime.GOMAXPROCS(0), DefaultMaxWait)
 }
 
-// NewArgon2idWithParams returns a hasher with custom cost, concurrency and
-// maximum wait for a hashing slot.
 func NewArgon2idWithParams(p Params, maxConcurrent int, maxWait time.Duration) *Argon2id {
 	return &Argon2id{params: p, slots: make(chan struct{}, max(maxConcurrent, 1)), maxWait: maxWait}
 }
@@ -79,8 +76,7 @@ func (a *Argon2id) Hash(ctx context.Context, password string) (string, error) {
 		b64.EncodeToString(salt), b64.EncodeToString(key)), nil
 }
 
-// Matches reports whether password corresponds to encoded, using the
-// parameters stored in the hash.
+// Matches verifies password with the parameters stored in encoded.
 func (a *Argon2id) Matches(ctx context.Context, encoded, password string) (bool, error) {
 	p, salt, want, err := decode(encoded)
 	if err != nil {

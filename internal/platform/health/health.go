@@ -16,7 +16,6 @@ const (
 	checkTimeout  = 2 * time.Second
 )
 
-// Pinger reports whether a dependency is reachable.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
