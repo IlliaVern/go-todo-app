@@ -29,13 +29,14 @@ type ValidationError struct {
 func (e *ValidationError) Error() string { return e.msg }
 
 var (
-	ErrNameRequired     = &ValidationError{"name is required"}
-	ErrNameTooLong      = &ValidationError{fmt.Sprintf("name must be at most %d characters", MaxNameLength)}
-	ErrUsernameRequired = &ValidationError{"username is required"}
-	ErrUsernameTooLong  = &ValidationError{fmt.Sprintf("username must be at most %d characters", MaxUsernameLength)}
-	ErrPasswordRequired = &ValidationError{"password is required"}
-	ErrPasswordTooLong  = &ValidationError{fmt.Sprintf("password must be at most %d bytes", MaxPasswordBytes)}
-	ErrNULCharacter     = &ValidationError{"name and username must not contain NUL characters"}
+	ErrNameRequired       = &ValidationError{"name is required"}
+	ErrNameTooLong        = &ValidationError{fmt.Sprintf("name must be at most %d characters", MaxNameLength)}
+	ErrUsernameRequired   = &ValidationError{"username is required"}
+	ErrUsernameTooLong    = &ValidationError{fmt.Sprintf("username must be at most %d characters", MaxUsernameLength)}
+	ErrUsernameWhitespace = &ValidationError{"username must not start or end with whitespace"}
+	ErrPasswordRequired   = &ValidationError{"password is required"}
+	ErrPasswordTooLong    = &ValidationError{fmt.Sprintf("password must be at most %d bytes", MaxPasswordBytes)}
+	ErrNULCharacter       = &ValidationError{"name and username must not contain NUL characters"}
 )
 
 var ErrPasswordHashEmpty = errors.New("password hash is empty")
@@ -85,4 +86,6 @@ type UserRepository interface {
 	Add(ctx context.Context, user User) (int64, error)
 	// ByUsername returns the user or ErrUserNotFound.
 	ByUsername(ctx context.Context, username Username) (User, error)
+	// Exists reports whether a user with the id is still registered.
+	Exists(ctx context.Context, id int64) (bool, error)
 }

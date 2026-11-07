@@ -52,3 +52,9 @@ func (r *UserRepository) ByUsername(ctx context.Context, username domain.Usernam
 	}
 	return domain.RestoreUser(row.ID, row.Name, row.Username, row.PasswordHash), nil
 }
+
+func (r *UserRepository) Exists(ctx context.Context, id int64) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`, id).Scan(&exists)
+	return exists, err
+}

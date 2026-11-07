@@ -76,6 +76,11 @@ func (s *Service) SignUp(ctx context.Context, rawName, rawUsername, password str
 
 // SignIn checks the credentials and returns an access token, or ErrInvalidCredentials.
 func (s *Service) SignIn(ctx context.Context, rawUsername, password string) (string, error) {
+	// No stored password is this long, and rejecting it before hashing reveals
+	// nothing about the username.
+	if len(password) > domain.MaxPasswordBytes {
+		return "", ErrInvalidCredentials
+	}
 	// An invalid username cannot match a stored one.
 	username, err := domain.NewUsername(rawUsername)
 	if err != nil {
@@ -110,11 +115,19 @@ func (s *Service) rejectAfterDummyCheck(ctx context.Context, password string) er
 	return ErrInvalidCredentials
 }
 
-// Authenticate returns the user id carried by a valid token, or ErrInvalidToken.
-func (s *Service) Authenticate(token string) (int64, error) {
+// Authenticate returns the id of the still-registered user a valid token was
+// issued to, or ErrInvalidToken.
+func (s *Service) Authenticate(ctx context.Context, token string) (int64, error) {
 	userID, err := s.tokens.Verify(token)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrInvalidToken, err)
+	}
+	exists, err := s.users.Exists(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("look up token user: %w", err)
+	}
+	if !exists {
+		return 0, fmt.Errorf("%w: user %d no longer exists", ErrInvalidToken, userID)
 	}
 	return userID, nil
 }

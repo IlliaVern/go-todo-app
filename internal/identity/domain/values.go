@@ -23,21 +23,24 @@ func NewName(s string) (Name, error) {
 
 func (n Name) String() string { return n.value }
 
-// Username is the unique, non-blank login name, at most MaxUsernameLength
-// characters.
+// Username is the unique login name: lowercase, at most MaxUsernameLength
+// characters, without surrounding whitespace. "Ada" and "ada" are the same
+// username.
 type Username struct{ value string }
 
-// NewUsername validates s as a username.
+// NewUsername validates s and normalises it to lowercase.
 func NewUsername(s string) (Username, error) {
 	switch {
 	case strings.TrimSpace(s) == "":
 		return Username{}, ErrUsernameRequired
+	case strings.TrimSpace(s) != s:
+		return Username{}, ErrUsernameWhitespace
 	case utf8.RuneCountInString(s) > MaxUsernameLength:
 		return Username{}, ErrUsernameTooLong
 	case strings.ContainsRune(s, 0):
 		return Username{}, ErrNULCharacter
 	}
-	return Username{s}, nil
+	return Username{strings.ToLower(s)}, nil
 }
 
 func (u Username) String() string { return u.value }

@@ -39,6 +39,8 @@ func TestNewUsername(t *testing.T) {
 	}{
 		{name: "valid", input: "ada"},
 		{name: "empty", input: "", wantErr: domain.ErrUsernameRequired},
+		{name: "leading space", input: " ada", wantErr: domain.ErrUsernameWhitespace},
+		{name: "trailing tab", input: "ada\t", wantErr: domain.ErrUsernameWhitespace},
 		{name: "too long", input: strings.Repeat("u", 256), wantErr: domain.ErrUsernameTooLong},
 		{name: "NUL", input: "a\x00da", wantErr: domain.ErrNULCharacter},
 	}
@@ -90,5 +92,13 @@ func TestValidatePassword(t *testing.T) {
 				t.Errorf("err = %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestNewUsernameLowercases(t *testing.T) {
+	for _, in := range []string{"Ada", "ADA", "aDa"} {
+		if got, err := domain.NewUsername(in); err != nil || got.String() != "ada" {
+			t.Errorf("NewUsername(%q) = %q, %v; want ada", in, got, err)
+		}
 	}
 }

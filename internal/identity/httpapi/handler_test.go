@@ -15,6 +15,7 @@ import (
 type users struct{}
 
 func (users) Add(context.Context, domain.User) (int64, error) { return 1, nil }
+func (users) Exists(context.Context, int64) (bool, error)     { return true, nil }
 func (users) ByUsername(context.Context, domain.Username) (domain.User, error) {
 	return domain.RestoreUser(1, "Ada", "ada", "stored-hash"), nil
 }

@@ -26,6 +26,15 @@ func (f *fakeUsers) Add(_ context.Context, u domain.User) (int64, error) {
 	return f.nextID, nil
 }
 
+func (f *fakeUsers) Exists(_ context.Context, id int64) (bool, error) {
+	for _, u := range f.byUsername {
+		if u.ID() == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeUsers) ByUsername(_ context.Context, username domain.Username) (domain.User, error) {
 	u, ok := f.byUsername[username.String()]
 	if !ok {
@@ -84,7 +93,7 @@ func TestSignUpAndSignIn(t *testing.T) {
 		t.Fatalf("SignIn = %q, %v; want token-for-1, nil", tok, err)
 	}
 
-	userID, err := svc.Authenticate(tok)
+	userID, err := svc.Authenticate(ctx, tok)
 	if err != nil || userID != 1 {
 		t.Fatalf("Authenticate = %d, %v; want 1, nil", userID, err)
 	}
@@ -159,7 +168,36 @@ func TestSignInRejectsNULUsername(t *testing.T) {
 
 func TestAuthenticateRejectsInvalidToken(t *testing.T) {
 	svc, _ := newService(t)
-	if _, err := svc.Authenticate("forged"); !errors.Is(err, app.ErrInvalidToken) {
+	if _, err := svc.Authenticate(context.Background(), "forged"); !errors.Is(err, app.ErrInvalidToken) {
 		t.Errorf("err = %v, want %v", err, app.ErrInvalidToken)
+	}
+}
+
+func TestAuthenticateRejectsTokensOfDeletedUsers(t *testing.T) {
+	svc, _ := newService(t)
+	if _, err := svc.Authenticate(context.Background(), "token-for-42"); !errors.Is(err, app.ErrInvalidToken) {
+		t.Errorf("token for unknown user 42: err = %v, want %v", err, app.ErrInvalidToken)
+	}
+}
+
+func TestSignInIsCaseInsensitiveAndBoundsPasswords(t *testing.T) {
+	ctx := context.Background()
+	svc, hasher := newService(t)
+	if _, err := svc.SignUp(ctx, "Ada", "Ada", "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SignUp(ctx, "Ada", "ADA", "other"); !errors.Is(err, domain.ErrUsernameTaken) {
+		t.Errorf("case variant sign-up: err = %v, want %v", err, domain.ErrUsernameTaken)
+	}
+	if _, err := svc.SignIn(ctx, "aDa", "s3cret"); err != nil {
+		t.Errorf("case-insensitive sign-in: %v", err)
+	}
+
+	hasher.compared = nil
+	if _, err := svc.SignIn(ctx, "ada", strings.Repeat("p", domain.MaxPasswordBytes+1)); !errors.Is(err, app.ErrInvalidCredentials) {
+		t.Errorf("oversized password: err = %v, want %v", err, app.ErrInvalidCredentials)
+	}
+	if len(hasher.compared) != 0 {
+		t.Errorf("oversized password was hashed %d times, want 0", len(hasher.compared))
 	}
 }

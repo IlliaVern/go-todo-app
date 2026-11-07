@@ -237,6 +237,8 @@ func TestAPI(t *testing.T) {
 		}
 		ghost := client{t: t, base: base, token: tok}
 		ghost.expect(ghost.do("POST", "/api/lists/", map[string]string{"title": "x"}), http.StatusUnauthorized, nil)
+		ghost.expect(ghost.do("GET", "/api/lists/", nil), http.StatusUnauthorized, nil)
+		ghost.expect(ghost.do("GET", "/api/items/1", nil), http.StatusUnauthorized, nil)
 	})
 
 	t.Run("lists and items", func(t *testing.T) {

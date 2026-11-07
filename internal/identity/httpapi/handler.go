@@ -105,9 +105,13 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		userID, err := h.svc.Authenticate(token)
-		if err != nil {
+		userID, err := h.svc.Authenticate(r.Context(), token)
+		if errors.Is(err, app.ErrInvalidToken) {
 			httpx.ErrorWithReason(w, r, http.StatusUnauthorized, app.ErrInvalidToken.Error(), err.Error())
+			return
+		}
+		if err != nil {
+			httpx.InternalError(w, r, err)
 			return
 		}
 
