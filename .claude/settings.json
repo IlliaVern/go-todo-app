@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go vet:*)",
+      "Bash(go test:*)",
+      "Bash(go mod tidy)",
+      "Bash(gofmt:*)",
+      "Bash(make help)",
+      "Bash(make check)",
+      "Bash(make vet)",
+      "Bash(make test)",
+      "Bash(make test-unit)",
+      "Bash(make e2e)",
+      "Bash(make build)",
+      "Bash(make fmt)",
+      "Bash(make vuln)",
+      "Bash(docker compose -f docker/compose.yaml ps:*)",
+      "Bash(docker compose -f docker/compose.yaml logs:*)",
+      "Bash(docker compose -f docker/compose.yaml config:*)"
+    ],
+    "deny": [
+      "Read(./.env)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gofmt.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
