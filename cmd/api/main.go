@@ -57,11 +57,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			slog.Error("closing database connection failed", "error", err)
-		}
-	}()
+	defer db.Close()
 
 	handler, err := api.NewHandler(db, cfg.SigningKey, logger)
 	if err != nil {

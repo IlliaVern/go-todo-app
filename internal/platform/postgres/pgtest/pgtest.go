@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
@@ -35,7 +35,7 @@ func SkipUnlessDocker(t *testing.T) {
 
 // Start runs PostgreSQL with schema/000001_init.up.sql applied and returns a
 // connection; the container is removed when t finishes.
-func Start(t *testing.T) *sqlx.DB {
+func Start(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	SkipUnlessDocker(t)
 
@@ -60,7 +60,7 @@ func Start(t *testing.T) *sqlx.DB {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(db.Close)
 	return db
 }
 

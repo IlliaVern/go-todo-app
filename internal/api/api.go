@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	identityapp "github.com/IlliaVern/go-todo-app/internal/identity/app"
 	identityhttp "github.com/IlliaVern/go-todo-app/internal/identity/httpapi"
@@ -25,7 +25,7 @@ import (
 const tokenTTL = 12 * time.Hour
 
 // NewHandler returns the HTTP handler serving the whole API.
-func NewHandler(db *sqlx.DB, signingKey string, logger *slog.Logger) (http.Handler, error) {
+func NewHandler(db *pgxpool.Pool, signingKey string, logger *slog.Logger) (http.Handler, error) {
 	tokens, err := token.NewJWT(signingKey, tokenTTL)
 	if err != nil {
 		return nil, err

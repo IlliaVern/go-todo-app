@@ -1,5 +1,5 @@
-// Package postgres opens PostgreSQL connections and classifies driver errors
-// for the repository adapters of every bounded context.
+// Package postgres opens the PostgreSQL connection pool and classifies driver
+// errors for the repository adapters of every bounded context.
 package postgres
 
 import (
@@ -9,8 +9,7 @@ import (
 	"net/url"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Config struct {
@@ -36,23 +35,23 @@ func (c Config) DSN() string {
 }
 
 // Open connects using cfg and verifies the connection with a ping.
-func Open(ctx context.Context, cfg Config) (*sqlx.DB, error) {
+func Open(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	return Connect(ctx, cfg.DSN())
 }
 
-// Connect connects using a DSN and verifies the connection with a ping.
-func Connect(ctx context.Context, dsn string) (*sqlx.DB, error) {
-	db, err := sqlx.Open("pgx", dsn)
+// Connect creates a pool for dsn and verifies it with a ping.
+func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, err
 	}
 
-	return db, nil
+	return pool, nil
 }
 
 // SQLSTATE codes, see https://www.postgresql.org/docs/current/errcodes-appendix.html.

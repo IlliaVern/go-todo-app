@@ -5,17 +5,17 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres/pgtest"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
 	"github.com/IlliaVern/go-todo-app/internal/todo/postgres"
 )
 
-func insertUser(t *testing.T, db *sqlx.DB, username string) int64 {
+func insertUser(t *testing.T, db *pgxpool.Pool, username string) int64 {
 	t.Helper()
 	var id int64
-	if err := db.QueryRowContext(t.Context(),
+	if err := db.QueryRow(t.Context(),
 		`INSERT INTO users (name, username, password_hash) VALUES ('n', $1, 'h') RETURNING id`, username,
 	).Scan(&id); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestListDeletionCascadesToItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	var remaining int
-	if err := db.GetContext(ctx, &remaining, `SELECT count(*) FROM todo_items WHERE list_id = $1`, listID); err != nil {
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM todo_items WHERE list_id = $1`, listID).Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
 	if remaining != 0 {

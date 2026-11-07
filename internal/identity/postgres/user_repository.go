@@ -3,10 +3,10 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
@@ -20,16 +20,16 @@ type userRow struct {
 }
 
 type UserRepository struct {
-	db *sqlx.DB
+	db *pgxpool.Pool
 }
 
-func NewUserRepository(db *sqlx.DB) *UserRepository {
+func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{db: db}
 }
 
 func (r *UserRepository) Add(ctx context.Context, user domain.User) (int64, error) {
 	var id int64
-	err := r.db.QueryRowContext(ctx,
+	err := r.db.QueryRow(ctx,
 		`INSERT INTO users (name, username, password_hash) VALUES ($1, $2, $3) RETURNING id`,
 		user.Name(), user.Username(), user.PasswordHash(),
 	).Scan(&id)
@@ -40,11 +40,11 @@ func (r *UserRepository) Add(ctx context.Context, user domain.User) (int64, erro
 }
 
 func (r *UserRepository) ByUsername(ctx context.Context, username string) (domain.User, error) {
-	var row userRow
-	err := r.db.GetContext(ctx, &row,
+	rows, _ := r.db.Query(ctx,
 		`SELECT id, name, username, password_hash FROM users WHERE username = $1`,
 		username)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[userRow])
+	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.User{}, domain.ErrUserNotFound
 	}
 	if err != nil {
