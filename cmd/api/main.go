@@ -11,12 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/IlliaVern/go-todo-app/internal/api"
 	"github.com/IlliaVern/go-todo-app/internal/platform/config"
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpserver"
 	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
-	"github.com/gin-gonic/gin"
 )
 
 // shutdownTimeout must stay below stop_grace_period in docker/compose.yaml.

@@ -8,9 +8,10 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
+
+	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 )
 
 type Config struct {

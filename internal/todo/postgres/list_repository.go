@@ -7,9 +7,10 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
-	"github.com/jmoiron/sqlx"
 )
 
 type listRow struct {

@@ -21,3 +21,7 @@ bin/
 logs/
 tmp/
 coverage.*
+
+# Developer tooling, not needed to build the image
+tools/
+.golangci.yml

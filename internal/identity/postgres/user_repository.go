@@ -6,9 +6,10 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
-	"github.com/jmoiron/sqlx"
 )
 
 type userRow struct {

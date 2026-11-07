@@ -8,8 +8,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
 	"github.com/gin-gonic/gin"
+
+	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
 )
 
 // RequestIDHeader is read from requests and always set on responses.

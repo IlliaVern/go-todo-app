@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
+
 	identityapp "github.com/IlliaVern/go-todo-app/internal/identity/app"
 	identityhttp "github.com/IlliaVern/go-todo-app/internal/identity/httpapi"
 	"github.com/IlliaVern/go-todo-app/internal/identity/password"
@@ -17,8 +20,6 @@ import (
 	todoapp "github.com/IlliaVern/go-todo-app/internal/todo/app"
 	todohttp "github.com/IlliaVern/go-todo-app/internal/todo/httpapi"
 	todopg "github.com/IlliaVern/go-todo-app/internal/todo/postgres"
-	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
 )
 
 const tokenTTL = 12 * time.Hour

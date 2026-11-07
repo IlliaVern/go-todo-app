@@ -186,7 +186,7 @@ func TestAPI(t *testing.T) {
 			{"no token", "Bearer "},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				req, _ := http.NewRequestWithContext(t.Context(), "GET", base+"/api/lists/", nil)
+				req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/api/lists/", nil)
 				if tc.header != "" {
 					req.Header.Set("Authorization", tc.header)
 				}

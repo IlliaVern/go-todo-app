@@ -11,10 +11,11 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 )
 
 // Image must match the postgres service in docker/compose.yaml.

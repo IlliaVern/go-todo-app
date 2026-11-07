@@ -5,10 +5,11 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
 	"github.com/IlliaVern/go-todo-app/internal/todo/app"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
-	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {

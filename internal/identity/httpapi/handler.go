@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/IlliaVern/go-todo-app/internal/identity/app"
 	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
-	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {

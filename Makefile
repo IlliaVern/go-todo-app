@@ -1,8 +1,10 @@
 COMPOSE := docker compose -f docker/compose.yaml $(if $(wildcard .env),--env-file .env)
+# Developer tools are pinned in tools/go.mod, apart from the application's dependencies.
+TOOL := go tool -modfile=tools/go.mod
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down infra logs run build test test-unit e2e vet fmt check vuln
+.PHONY: help up down infra logs run build test test-unit e2e lint fmt check vuln
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z0-9-]+:.*## / {printf "  %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,15 +36,14 @@ test-unit: ## Run tests without Docker (skips repository and end-to-end tests)
 e2e: ## Run the end-to-end tests against the stack started by `make up`
 	E2E_BASE_URL=http://localhost:8000 go test -count=1 ./internal/e2e/
 
-vet: ## Run go vet
-	go vet ./...
+lint: ## Run golangci-lint (formatting, go vet and the linters in .golangci.yml)
+	$(TOOL) golangci-lint run ./...
 
-fmt: ## Format Go sources
-	gofmt -w .
+fmt: ## Format Go sources and group imports
+	$(TOOL) golangci-lint fmt ./...
 
-check: vet ## Run all local checks (gofmt, vet, all tests; fails if Docker is unavailable)
-	@test -z "$$(gofmt -l .)" || { gofmt -l .; echo "gofmt: files above need formatting"; exit 1; }
+check: lint ## Run all local checks (lint, all tests; fails if Docker is unavailable)
 	REQUIRE_DOCKER=1 go test -race ./...
 
 vuln: ## Scan dependencies for known vulnerabilities
-	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+	$(TOOL) govulncheck ./...

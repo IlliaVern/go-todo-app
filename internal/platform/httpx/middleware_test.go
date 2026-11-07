@@ -2,6 +2,7 @@ package httpx_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,9 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
 	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
-	"github.com/gin-gonic/gin"
 )
 
 func newRouter(t *testing.T) (*gin.Engine, *bytes.Buffer) {
@@ -53,7 +55,7 @@ func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 }
 
 func serve(r http.Handler, path, requestID string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 	if requestID != "" {
 		req.Header.Set(httpx.RequestIDHeader, requestID)
 	}

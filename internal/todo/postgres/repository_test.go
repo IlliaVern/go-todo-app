@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres/pgtest"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
 	"github.com/IlliaVern/go-todo-app/internal/todo/postgres"
-	"github.com/jmoiron/sqlx"
 )
 
 func insertUser(t *testing.T, db *sqlx.DB, username string) int64 {
