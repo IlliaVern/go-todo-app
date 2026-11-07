@@ -20,10 +20,10 @@ logs: ## Follow Docker stack logs
 	$(COMPOSE) logs --follow
 
 run: ## Run the API on the host (needs `make infra` and a .env file)
-	go run ./cmd
+	go run ./cmd/api
 
 build: ## Build the API binary into bin/
-	go build -trimpath -o bin/todo-app ./cmd
+	go build -trimpath -o bin/todo-app ./cmd/api
 
 test: ## Run tests with the race detector
 	go test -race ./...

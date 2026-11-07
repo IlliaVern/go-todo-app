@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=bind,target=. \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/todo-app ./cmd
+    go build -trimpath -ldflags="-s -w" -o /out/todo-app ./cmd/api
 
 FROM gcr.io/distroless/static-debian13:nonroot
 WORKDIR /app

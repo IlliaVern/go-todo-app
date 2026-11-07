@@ -1,37 +1,30 @@
 CREATE TABLE users
 (
-    id            serial       not null unique,
-    name          varchar(255) not null,
-    username      varchar(255) not null unique,
-    password_hash varchar(255) not null
+    id            bigserial PRIMARY KEY,
+    name          varchar(255) NOT NULL,
+    username      varchar(255) NOT NULL UNIQUE,
+    password_hash varchar(255) NOT NULL
 );
 
+-- A list has exactly one owner.
 CREATE TABLE todo_lists
 (
-    id          serial       not null unique,
-    title       varchar(255) not null,
-    description varchar(255)
+    id          bigserial PRIMARY KEY,
+    user_id     bigint       NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    title       varchar(255) NOT NULL,
+    description varchar(255) NOT NULL DEFAULT ''
 );
 
-CREATE TABLE users_lists
-(
-    id      serial                                           not null unique,
-    user_id int references users (id) on delete cascade      not null,
-    list_id int references todo_lists (id) on delete cascade not null
-);
+CREATE INDEX todo_lists_user_id_idx ON todo_lists (user_id);
 
+-- An item belongs to exactly one list and is deleted with it.
 CREATE TABLE todo_items
 (
-    id          serial       not null unique,
-    title       varchar(255) not null,
-    description varchar(255),
-    done        boolean      not null default false
+    id          bigserial PRIMARY KEY,
+    list_id     bigint       NOT NULL REFERENCES todo_lists (id) ON DELETE CASCADE,
+    title       varchar(255) NOT NULL,
+    description varchar(255) NOT NULL DEFAULT '',
+    done        boolean      NOT NULL DEFAULT false
 );
 
-
-CREATE TABLE lists_items
-(
-    id      serial                                           not null unique,
-    item_id int references todo_items (id) on delete cascade not null,
-    list_id int references todo_lists (id) on delete cascade not null
-);
+CREATE INDEX todo_items_list_id_idx ON todo_items (list_id);
