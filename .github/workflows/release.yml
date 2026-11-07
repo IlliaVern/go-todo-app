@@ -1,7 +1,8 @@
 name: Release image
 
-# Manual only: builds the API image for linux/amd64 and linux/arm64 and pushes
-# it to GitHub Container Registry as ghcr.io/<owner>/<repo>:<version>.
+# Manual only: runs CI, then builds the API image for linux/amd64 and
+# linux/arm64 and pushes it to GitHub Container Registry as
+# ghcr.io/<owner>/<repo>:<version>. Existing versions are never overwritten.
 on:
   workflow_dispatch:
     inputs:
@@ -18,14 +19,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  image:
-    name: Build and push image
-    if: github.ref == 'refs/heads/main'
+  validate:
+    name: Validate request
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
     steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Releases are built from main only; this run is on $GITHUB_REF." >&2
+          exit 1
       - name: Validate version
         env:
           VERSION: ${{ inputs.version }}
@@ -35,6 +37,19 @@ jobs:
             exit 1
           fi
 
+  ci:
+    name: CI
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    name: Build and push image
+    needs: ci
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -44,6 +59,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to overwrite an existing version
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          ref="${IMAGE,,}:${VERSION}"
+          if docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then
+            echo "$ref already exists; choose a new version." >&2
+            exit 1
+          fi
 
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0

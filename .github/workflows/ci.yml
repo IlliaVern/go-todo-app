@@ -1,13 +1,15 @@
 name: CI
 
 # Disabled on purpose: this workflow runs only when started manually from the
-# Actions tab ("Run workflow"). To run it automatically, add for example:
+# Actions tab ("Run workflow") or as the gate of release.yml. To run it
+# automatically, add for example:
 #
 #   push:
 #     branches: [main]
 #   pull_request:
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
