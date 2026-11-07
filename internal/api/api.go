@@ -42,6 +42,9 @@ func NewHandler(db *sqlx.DB, signingKey string, logger *slog.Logger) (http.Handl
 		return nil, err
 	}
 	router.Use(httpx.RequestLogger(logger), httpx.Recovery())
+	router.NoRoute(func(c *gin.Context) {
+		httpx.Error(c, http.StatusNotFound, "route not found")
+	})
 
 	identity := identityhttp.NewHandler(identitySvc)
 	identity.Register(router)

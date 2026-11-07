@@ -53,7 +53,7 @@ Errors come back as `{"message": "..."}`:
 | 409 | Username already taken |
 | 500 | Unexpected failure. Details are logged, not returned |
 
-Every response carries an `X-Request-ID` header. The server reuses yours if you send one (printable ASCII, up to 128 characters) and otherwise generates one.
+Every response carries an `X-Request-ID` header. The server reuses yours if you send one (printable ASCII, up to 128 characters) and otherwise generates one. The one exception is gin's automatic trailing-slash redirect (`/api/lists` → `/api/lists/`), which is answered before any middleware runs.
 
 ```sh
 curl -s localhost:8000/auth/sign-up -d '{"name":"Ada","username":"ada","password":"s3cret"}'
@@ -95,13 +95,13 @@ Non-secret settings live in [`configs/config.yml`](configs/config.yml). You can 
 | `DB_PASSWORD` | none | PostgreSQL password (required) |
 | `AUTH_SIGNING_KEY` | none | HS256 token signing key, at least 32 bytes (required). Generate one with `openssl rand -base64 48` |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
-| `GIN_MODE` | `debug` (`release` in the Docker image) | gin mode |
+| `GIN_MODE` | `release` | Set to `debug` for gin's route and request debug output (plain text, not JSON) |
 
-The Compose stack supplies local-only defaults for `DB_PASSWORD` and `AUTH_SIGNING_KEY` when `.env` doesn't set them. Never reuse those values outside your machine.
+The Compose stack supplies local-only defaults for `DB_PASSWORD` and `AUTH_SIGNING_KEY` when `.env` doesn't set them. Never reuse those values outside your machine. An `AUTH_SIGNING_KEY=` line left empty is passed through, and the app refuses to start.
 
 ## Logging
 
-The app writes JSON lines to stdout, one per request:
+The app writes JSON lines to stdout, one per request (trailing-slash redirects excepted):
 
 ```json
 {"time":"…","level":"INFO","msg":"request","method":"GET","route":"/api/items/:id","status":200,"duration_ms":0.4,"bytes":55,"client_ip":"192.168.107.1","request_id":"7F4PEA5TR3MYXRCQJMKVHCHKTR"}

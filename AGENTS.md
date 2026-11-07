@@ -35,11 +35,11 @@ Rules:
 - Schema lives in `schema/000001_init.*.sql` (golang-migrate format). Until a production database exists, change it in place; Compose and the e2e suite both apply it from scratch.
 - Secrets (`DB_PASSWORD`, `AUTH_SIGNING_KEY`) come only from the environment. Non-secret settings live in `configs/config.yml`; any key there is overridable by env as UPPER_SNAKE_CASE (`db.host` → `DB_HOST`). Document new variables in `.env.example` and the README configuration table.
 - Error mapping: `*domain.ValidationError` → 400, invalid credentials or token → 401, `Err*NotFound` → 404, `ErrUsernameTaken` → 409, anything else → `httpx.InternalError` (generic 500 body). Rejections go through `httpx.Error`, which hands the reason to the access log. Status codes and JSON shapes are the API contract: change them deliberately and say so in the commit body.
-- Collections are returned as `[]`, never `null`.
+- Collections are returned as `[]`, never `null`. Unknown routes return a JSON 404.
 
 ## Logging
 
-- `httpx.RequestLogger` writes exactly one `"msg":"request"` line per request (ERROR for 5xx, WARN for 4xx, INFO otherwise) carrying `request_id`. Handlers record outcomes through `httpx.Error` / `httpx.InternalError`; they do not log requests themselves.
+- `httpx.RequestLogger` writes exactly one `"msg":"request"` line per request (gin's trailing-slash redirects bypass middleware and are not logged) (ERROR for 5xx, WARN for 4xx, INFO otherwise) carrying `request_id`. Handlers record outcomes through `httpx.Error` / `httpx.InternalError`; they do not log requests themselves.
 - Other logs use `slog.*Context(ctx, ...)` with the request context so `request_id` is attached.
 
 ## Gotchas

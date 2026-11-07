@@ -66,7 +66,8 @@ services:
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_PASSWORD: *db-password
-      AUTH_SIGNING_KEY: ${AUTH_SIGNING_KEY:-local-dev-signing-key-do-not-use-in-production}
+      # Unset falls back to a local-only key; set-but-empty is passed through so the app refuses to start.
+      AUTH_SIGNING_KEY: ${AUTH_SIGNING_KEY-local-dev-signing-key-do-not-use-in-production}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
