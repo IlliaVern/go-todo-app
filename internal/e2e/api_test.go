@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,7 +60,7 @@ func startAPI(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	handler, err := api.NewHandler(db, "e2e-signing-key-0123456789abcdef")
+	handler, err := api.NewHandler(db, "e2e-signing-key-0123456789abcdef", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,10 +1,10 @@
 // Package httpx holds HTTP helpers shared by the bounded contexts' gin
-// adapters: the error and status envelopes, request binding, path ids and the
-// authenticated caller's user id.
+// adapters: the error and status envelopes, request binding, path ids, the
+// authenticated caller's user id, and request logging and recovery middleware.
 package httpx
 
 import (
-	"log/slog"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -29,17 +29,17 @@ func OK(c *gin.Context) {
 	c.JSON(http.StatusOK, statusResponse{Status: "ok"})
 }
 
-// Error aborts the request with a client-visible message.
+// Error aborts the request with a client-visible message, which
+// RequestLogger records as the rejection reason.
 func Error(c *gin.Context, status int, message string) {
-	slog.InfoContext(c.Request.Context(), "request rejected",
-		"status", status, "method", c.Request.Method, "route", c.FullPath(), "reason", message)
+	c.Set(reasonKey, message)
 	c.AbortWithStatusJSON(status, errorResponse{Message: message})
 }
 
-// InternalError logs err and aborts with a generic 500, keeping internals out of the response.
+// InternalError aborts with a generic 500, keeping internals out of the
+// response; RequestLogger records err.
 func InternalError(c *gin.Context, err error) {
-	slog.ErrorContext(c.Request.Context(), "request failed",
-		"method", c.Request.Method, "route", c.FullPath(), "error", err)
+	c.Set(errorKey, err.Error())
 	c.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse{Message: "internal server error"})
 }
 
@@ -76,7 +76,6 @@ func UserID(c *gin.Context) (int64, bool) {
 	if userID, isInt := id.(int64); ok && isInt {
 		return userID, true
 	}
-	slog.ErrorContext(c.Request.Context(), "user id missing from request context", "route", c.FullPath())
-	c.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse{Message: "internal server error"})
+	InternalError(c, errors.New("user id missing from request context: authentication middleware not mounted"))
 	return 0, false
 }

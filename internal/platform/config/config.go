@@ -17,6 +17,7 @@ type Config struct {
 	Port       string
 	DB         postgres.Config
 	SigningKey string
+	LogLevel   string
 }
 
 // Load reads configs/config.yml relative to the working directory. Every key
@@ -32,6 +33,7 @@ func Load() (Config, error) {
 	v := viper.New()
 	v.AddConfigPath("configs")
 	v.SetConfigName("config")
+	v.SetDefault("log.level", "info")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -50,6 +52,7 @@ func Load() (Config, error) {
 			SSLMode:  v.GetString("db.sslmode"),
 		},
 		SigningKey: v.GetString("auth.signing_key"),
+		LogLevel:   v.GetString("log.level"),
 	}
 
 	if cfg.DB.Password == "" {

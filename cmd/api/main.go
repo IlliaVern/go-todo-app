@@ -14,6 +14,7 @@ import (
 	"github.com/IlliaVern/go-todo-app/internal/api"
 	"github.com/IlliaVern/go-todo-app/internal/platform/config"
 	"github.com/IlliaVern/go-todo-app/internal/platform/httpserver"
+	"github.com/IlliaVern/go-todo-app/internal/platform/logging"
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 )
 
@@ -35,6 +36,12 @@ func run() error {
 		return err
 	}
 
+	logger, err := logging.New(os.Stdout, cfg.LogLevel)
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(logger)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -48,7 +55,7 @@ func run() error {
 		}
 	}()
 
-	handler, err := api.NewHandler(db, cfg.SigningKey)
+	handler, err := api.NewHandler(db, cfg.SigningKey, logger)
 	if err != nil {
 		return fmt.Errorf("build api: %w", err)
 	}

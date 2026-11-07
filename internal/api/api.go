@@ -4,6 +4,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/IlliaVern/go-todo-app/internal/identity/password"
 	identitypg "github.com/IlliaVern/go-todo-app/internal/identity/postgres"
 	"github.com/IlliaVern/go-todo-app/internal/identity/token"
+	"github.com/IlliaVern/go-todo-app/internal/platform/httpx"
 	todoapp "github.com/IlliaVern/go-todo-app/internal/todo/app"
 	todohttp "github.com/IlliaVern/go-todo-app/internal/todo/httpapi"
 	todopg "github.com/IlliaVern/go-todo-app/internal/todo/postgres"
@@ -22,7 +24,7 @@ import (
 const tokenTTL = 12 * time.Hour
 
 // NewHandler returns the HTTP handler serving the whole API.
-func NewHandler(db *sqlx.DB, signingKey string) (http.Handler, error) {
+func NewHandler(db *sqlx.DB, signingKey string, logger *slog.Logger) (http.Handler, error) {
 	tokens, err := token.NewJWT(signingKey, tokenTTL)
 	if err != nil {
 		return nil, err
@@ -35,7 +37,11 @@ func NewHandler(db *sqlx.DB, signingKey string) (http.Handler, error) {
 	todoSvc := todoapp.NewService(todopg.NewListRepository(db), todopg.NewItemRepository(db))
 
 	router := gin.New()
-	router.Use(gin.Recovery())
+	// client_ip is the direct peer; no proxy headers are trusted.
+	if err := router.SetTrustedProxies(nil); err != nil {
+		return nil, err
+	}
+	router.Use(httpx.RequestLogger(logger), httpx.Recovery())
 
 	identity := identityhttp.NewHandler(identitySvc)
 	identity.Register(router)

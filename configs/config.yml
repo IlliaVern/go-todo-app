@@ -6,3 +6,6 @@ db:
   port: "5436"
   dbname: "postgres"
   sslmode: "disable"
+
+log:
+  level: "info" # debug, info, warn or error
