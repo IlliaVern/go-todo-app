@@ -1,0 +1,23 @@
+# Only go.mod, go.sum, Go sources and configs/ are needed to build the image.
+.git
+.gitignore
+.dockerignore
+.github
+.claude
+.omc
+.idea
+.vscode
+.DS_Store
+
+# Secrets and local environment
+.env
+.env.*
+
+# Docs, tooling and build output
+*.md
+Makefile
+docker/
+bin/
+logs/
+tmp/
+coverage.*
