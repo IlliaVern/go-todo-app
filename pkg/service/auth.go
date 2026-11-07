@@ -62,12 +62,12 @@ func (s *AuthService) ParseToken(accessToken string) (int, error) {
 		return []byte(signingKey), nil
 	})
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 
 	claims, ok := token.Claims.(*tokenClaims)
 	if !ok {
-		return 0, errors.New("token claims ar not of type *tokenClaims")
+		return 0, errors.New("token claims are not of type *tokenClaims")
 	}
 
 	return claims.UserId, nil
