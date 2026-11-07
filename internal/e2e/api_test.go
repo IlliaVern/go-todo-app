@@ -314,23 +314,15 @@ func TestAPI(t *testing.T) {
 		user.expect(user.do("DELETE", listPath, nil), http.StatusNotFound, nil)
 	})
 
-	t.Run("concurrent patches to different fields both apply", func(t *testing.T) {
+	t.Run("concurrent patches to different fields all apply", func(t *testing.T) {
 		user := signUp(t, base)
-		var item idBody
-		var list idBody
+		var list, item idBody
 		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusOK, &list)
 		user.expect(user.do("POST", fmt.Sprintf("/api/lists/%d/items/", list.ID), map[string]string{"title": "old"}), http.StatusOK, &item)
 		itemPath := fmt.Sprintf("/api/items/%d", item.ID)
 
 		patches := []map[string]any{{"title": "new"}, {"done": true}, {"description": "d"}}
-		statuses := make(chan int, len(patches))
-		var wg sync.WaitGroup
-		for _, p := range patches {
-			wg.Go(func() { statuses <- user.do("PUT", itemPath, p).status })
-		}
-		wg.Wait()
-		close(statuses)
-		for status := range statuses {
+		for _, status := range concurrently(user, "PUT", itemPath, patches) {
 			if status != http.StatusOK {
 				t.Errorf("concurrent PUT status = %d, want 200", status)
 			}
@@ -340,6 +332,31 @@ func TestAPI(t *testing.T) {
 		user.expect(user.do("GET", itemPath, nil), http.StatusOK, &got)
 		if got != (itemBody{ID: item.ID, Title: "new", Description: "d", Done: true}) {
 			t.Errorf("item after concurrent patches = %+v, want all three applied", got)
+		}
+	})
+
+	t.Run("heavy contention answers 200 or 409, never 500", func(t *testing.T) {
+		user := signUp(t, base)
+		var list idBody
+		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusOK, &list)
+		listPath := fmt.Sprintf("/api/lists/%d", list.ID)
+
+		patches := make([]map[string]any, 20)
+		for i := range patches {
+			patches[i] = map[string]any{"title": fmt.Sprintf("t-%d", i)}
+		}
+		ok := 0
+		for _, status := range concurrently(user, "PUT", listPath, patches) {
+			switch status {
+			case http.StatusOK:
+				ok++
+			case http.StatusConflict:
+			default:
+				t.Errorf("status = %d, want 200 or 409", status)
+			}
+		}
+		if ok == 0 {
+			t.Error("no concurrent update succeeded")
 		}
 	})
 
@@ -374,4 +391,15 @@ func TestAPI(t *testing.T) {
 			t.Errorf("alice's data changed: %+v %+v", gotList, gotItem)
 		}
 	})
+}
+
+// concurrently sends one request per body at the same time and returns the statuses.
+func concurrently(c client, method, path string, bodies []map[string]any) []int {
+	statuses := make([]int, len(bodies))
+	var wg sync.WaitGroup
+	for i, body := range bodies {
+		wg.Go(func() { statuses[i] = c.do(method, path, body).status })
+	}
+	wg.Wait()
+	return statuses
 }

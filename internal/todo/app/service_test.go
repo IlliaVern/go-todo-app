@@ -10,123 +10,134 @@ import (
 )
 
 // memStore is an in-memory implementation of both repository ports with the
-// same owner scoping as the PostgreSQL adapters.
+// same owner scoping and version checks as the PostgreSQL adapters.
 type memStore struct {
-	lists  map[int64]domain.List
-	items  map[int64]domain.Item
+	lists  map[domain.ListID]domain.List
+	items  map[domain.ItemID]domain.Item
 	nextID int64
 	// conflicts makes the next N updates fail as if another writer won.
 	conflicts int
 }
 
 func newMemStore() *memStore {
-	return &memStore{lists: map[int64]domain.List{}, items: map[int64]domain.Item{}}
+	return &memStore{lists: map[domain.ListID]domain.List{}, items: map[domain.ItemID]domain.Item{}}
+}
+
+// conflict reports whether an update must lose: a forced conflict or a stale version.
+func (s *memStore) conflict(stored, loaded int64) bool {
+	if s.conflicts > 0 {
+		s.conflicts--
+		return true
+	}
+	return stored != loaded
 }
 
 type memLists struct{ *memStore }
 type memItems struct{ *memStore }
 
-func (s memLists) Add(_ context.Context, l domain.List) (int64, error) {
+func (s memLists) Add(_ context.Context, l domain.List) (domain.ListID, error) {
 	s.nextID++
-	s.lists[s.nextID] = domain.RestoreList(s.nextID, l.OwnerID(), l.Title().String(), l.Description().String(), 1)
-	return s.nextID, nil
+	id := domain.ListID(s.nextID)
+	s.lists[id] = domain.RestoreList(id, l.OwnerID(), l.Title().String(), l.Description().String(), 1)
+	return id, nil
 }
 
-func (s memLists) Get(_ context.Context, ownerID, listID int64) (domain.List, error) {
-	l, ok := s.lists[listID]
-	if !ok || l.OwnerID() != ownerID {
+func (s memLists) Get(_ context.Context, owner domain.OwnerID, id domain.ListID) (domain.List, error) {
+	l, ok := s.lists[id]
+	if !ok || l.OwnerID() != owner {
 		return domain.List{}, domain.ErrListNotFound
 	}
 	return l, nil
 }
 
-func (s memLists) ListByOwner(_ context.Context, ownerID int64) ([]domain.List, error) {
+func (s memLists) ByOwner(_ context.Context, owner domain.OwnerID) ([]domain.List, error) {
 	out := []domain.List{}
-	for id := int64(1); id <= s.nextID; id++ {
-		if l, ok := s.lists[id]; ok && l.OwnerID() == ownerID {
+	for id := range s.nextID {
+		if l, ok := s.lists[domain.ListID(id+1)]; ok && l.OwnerID() == owner {
 			out = append(out, l)
 		}
 	}
 	return out, nil
 }
 
-func (s memLists) Update(ctx context.Context, l domain.List) error {
+func (s memLists) Update(ctx context.Context, l domain.List) (domain.List, error) {
 	stored, err := s.Get(ctx, l.OwnerID(), l.ID())
 	if err != nil {
-		return err
+		return domain.List{}, err
 	}
-	if s.conflicts > 0 || stored.Version() != l.Version() {
-		s.conflicts--
-		return domain.ErrConcurrentUpdate
+	if s.conflict(stored.Version(), l.Version()) {
+		return domain.List{}, domain.ErrConcurrentUpdate
 	}
-	s.lists[l.ID()] = domain.RestoreList(l.ID(), l.OwnerID(), l.Title().String(), l.Description().String(), l.Version()+1)
-	return nil
+	saved := domain.RestoreList(l.ID(), l.OwnerID(), l.Title().String(), l.Description().String(), l.Version()+1)
+	s.lists[l.ID()] = saved
+	return saved, nil
 }
 
-func (s memLists) Delete(ctx context.Context, ownerID, listID int64) error {
-	if _, err := s.Get(ctx, ownerID, listID); err != nil {
+func (s memLists) Delete(ctx context.Context, owner domain.OwnerID, id domain.ListID) error {
+	if _, err := s.Get(ctx, owner, id); err != nil {
 		return err
 	}
-	delete(s.lists, listID)
-	for id, it := range s.items {
-		if it.ListID() == listID {
-			delete(s.items, id)
+	delete(s.lists, id)
+	for itemID, it := range s.items {
+		if it.ListID() == id {
+			delete(s.items, itemID)
 		}
 	}
 	return nil
 }
 
-func (s memItems) Add(_ context.Context, ownerID int64, it domain.Item) (int64, error) {
-	if l, ok := s.lists[it.ListID()]; !ok || l.OwnerID() != ownerID {
+func (s memItems) Add(_ context.Context, owner domain.OwnerID, it domain.Item) (domain.ItemID, error) {
+	if l, ok := s.lists[it.ListID()]; !ok || l.OwnerID() != owner {
 		return 0, domain.ErrListNotFound
 	}
 	s.nextID++
-	s.items[s.nextID] = domain.RestoreItem(s.nextID, it.ListID(), it.Title().String(), it.Description().String(), it.Done(), 1)
-	return s.nextID, nil
+	id := domain.ItemID(s.nextID)
+	s.items[id] = domain.RestoreItem(id, it.ListID(), it.Title().String(), it.Description().String(), it.Done(), 1)
+	return id, nil
 }
 
-func (s memItems) Get(_ context.Context, ownerID, itemID int64) (domain.Item, error) {
-	it, ok := s.items[itemID]
-	if !ok || s.lists[it.ListID()].OwnerID() != ownerID {
+func (s memItems) Get(_ context.Context, owner domain.OwnerID, id domain.ItemID) (domain.Item, error) {
+	it, ok := s.items[id]
+	if !ok || s.lists[it.ListID()].OwnerID() != owner {
 		return domain.Item{}, domain.ErrItemNotFound
 	}
 	return it, nil
 }
 
-func (s memItems) ListByList(_ context.Context, ownerID, listID int64) ([]domain.Item, error) {
+func (s memItems) ByList(_ context.Context, owner domain.OwnerID, list domain.ListID) ([]domain.Item, error) {
 	out := []domain.Item{}
-	for id := int64(1); id <= s.nextID; id++ {
-		if it, ok := s.items[id]; ok && it.ListID() == listID && s.lists[listID].OwnerID() == ownerID {
+	for id := range s.nextID {
+		if it, ok := s.items[domain.ItemID(id+1)]; ok && it.ListID() == list && s.lists[list].OwnerID() == owner {
 			out = append(out, it)
 		}
 	}
 	return out, nil
 }
 
-func (s memItems) Update(ctx context.Context, ownerID int64, it domain.Item) error {
-	stored, err := s.Get(ctx, ownerID, it.ID())
+func (s memItems) Update(ctx context.Context, owner domain.OwnerID, it domain.Item) (domain.Item, error) {
+	stored, err := s.Get(ctx, owner, it.ID())
 	if err != nil {
-		return err
+		return domain.Item{}, err
 	}
-	if s.conflicts > 0 || stored.Version() != it.Version() {
-		s.conflicts--
-		return domain.ErrConcurrentUpdate
+	if s.conflict(stored.Version(), it.Version()) {
+		return domain.Item{}, domain.ErrConcurrentUpdate
 	}
-	s.items[it.ID()] = domain.RestoreItem(it.ID(), it.ListID(), it.Title().String(), it.Description().String(), it.Done(), it.Version()+1)
-	return nil
+	saved := domain.RestoreItem(it.ID(), it.ListID(), it.Title().String(), it.Description().String(), it.Done(), it.Version()+1)
+	s.items[it.ID()] = saved
+	return saved, nil
 }
 
-func (s memItems) Delete(ctx context.Context, ownerID, itemID int64) error {
-	if _, err := s.Get(ctx, ownerID, itemID); err != nil {
+func (s memItems) Delete(ctx context.Context, owner domain.OwnerID, id domain.ItemID) error {
+	if _, err := s.Get(ctx, owner, id); err != nil {
 		return err
 	}
-	delete(s.items, itemID)
+	delete(s.items, id)
 	return nil
 }
 
 const (
-	alice int64 = 1
-	bob   int64 = 2
+	alice domain.OwnerID = 1
+	bob   domain.OwnerID = 2
 )
 
 func newService() *app.Service {
@@ -266,5 +277,24 @@ func TestUpdatesGiveUpAfterMaxAttempts(t *testing.T) {
 	}
 	if list, _ := svc.List(ctx, alice, listID); list.Title().String() != "L" {
 		t.Errorf("title = %q, want unchanged", list.Title().String())
+	}
+}
+
+func TestAddItemValidatesBeforeLookingUpTheList(t *testing.T) {
+	svc := newService()
+	if _, err := svc.AddItem(context.Background(), alice, 999, "", ""); !errors.Is(err, domain.ErrTitleRequired) {
+		t.Errorf("err = %v, want %v", err, domain.ErrTitleRequired)
+	}
+}
+
+func TestRetryStopsWhenContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	svc, store := newServiceWithStore()
+	listID, _ := svc.CreateList(ctx, alice, "L", "")
+
+	store.conflicts = 1
+	cancel()
+	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }

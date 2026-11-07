@@ -3,8 +3,8 @@ package domain
 // Item is an aggregate root referencing the list it belongs to. It is owned by
 // whoever owns that list.
 type Item struct {
-	id          int64
-	listID      int64
+	id          ItemID
+	listID      ListID
 	title       Title
 	description Description
 	done        bool
@@ -12,22 +12,18 @@ type Item struct {
 }
 
 // NewItem creates an undone item that has not been persisted yet.
-func NewItem(listID int64, title, description string) (Item, error) {
-	t, d, err := parseText(title, description)
-	if err != nil {
-		return Item{}, err
-	}
-	return Item{listID: listID, title: t, description: d}, nil
+func NewItem(list ListID, title Title, description Description) Item {
+	return Item{listID: list, title: title, description: description}
 }
 
 // RestoreItem rebuilds a persisted item from trusted storage without
 // re-validating it. Only repositories call it.
-func RestoreItem(id, listID int64, title, description string, done bool, version int64) Item {
-	return Item{id: id, listID: listID, title: Title{title}, description: Description{description}, done: done, version: version}
+func RestoreItem(id ItemID, list ListID, title, description string, done bool, version int64) Item {
+	return Item{id: id, listID: list, title: Title{title}, description: Description{description}, done: done, version: version}
 }
 
-func (i Item) ID() int64                { return i.id }
-func (i Item) ListID() int64            { return i.listID }
+func (i Item) ID() ItemID               { return i.id }
+func (i Item) ListID() ListID           { return i.listID }
 func (i Item) Title() Title             { return i.title }
 func (i Item) Description() Description { return i.description }
 func (i Item) Done() bool               { return i.done }
@@ -58,7 +54,7 @@ func (i *Item) Apply(p ItemPatch) error {
 		done = *p.Done
 	}
 
-	t, d, err := parseText(title, description)
+	t, d, err := ParseText(title, description)
 	if err != nil {
 		return err
 	}

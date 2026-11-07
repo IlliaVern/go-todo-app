@@ -6,12 +6,10 @@ import (
 )
 
 var (
-	ErrListNotFound = errors.New("todo list not found")
-	ErrItemNotFound = errors.New("todo item not found")
-	// ErrOwnerNotFound means the authenticated owner no longer exists.
-	ErrOwnerNotFound = errors.New("authenticated user no longer exists")
-	// ErrConcurrentUpdate means the aggregate changed after it was loaded.
-	ErrConcurrentUpdate = errors.New("the resource was modified concurrently, retry the request")
+	ErrListNotFound     = errors.New("todo list not found")
+	ErrItemNotFound     = errors.New("todo item not found")
+	ErrOwnerNotFound    = errors.New("list owner does not exist")
+	ErrConcurrentUpdate = errors.New("todo list or item was modified concurrently")
 )
 
 // ValidationError reports input that violates an invariant of a list or item.

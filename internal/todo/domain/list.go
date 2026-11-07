@@ -4,8 +4,8 @@ package domain
 
 // List is an aggregate root: a titled collection of items owned by one user.
 type List struct {
-	id          int64
-	ownerID     int64
+	id          ListID
+	ownerID     OwnerID
 	title       Title
 	description Description
 	// version increases on every saved update; repositories use it for
@@ -14,22 +14,18 @@ type List struct {
 }
 
 // NewList creates a list that has not been persisted yet.
-func NewList(ownerID int64, title, description string) (List, error) {
-	t, d, err := parseText(title, description)
-	if err != nil {
-		return List{}, err
-	}
-	return List{ownerID: ownerID, title: t, description: d}, nil
+func NewList(owner OwnerID, title Title, description Description) List {
+	return List{ownerID: owner, title: title, description: description}
 }
 
 // RestoreList rebuilds a persisted list from trusted storage without
 // re-validating it. Only repositories call it.
-func RestoreList(id, ownerID int64, title, description string, version int64) List {
-	return List{id: id, ownerID: ownerID, title: Title{title}, description: Description{description}, version: version}
+func RestoreList(id ListID, owner OwnerID, title, description string, version int64) List {
+	return List{id: id, ownerID: owner, title: Title{title}, description: Description{description}, version: version}
 }
 
-func (l List) ID() int64                { return l.id }
-func (l List) OwnerID() int64           { return l.ownerID }
+func (l List) ID() ListID               { return l.id }
+func (l List) OwnerID() OwnerID         { return l.ownerID }
 func (l List) Title() Title             { return l.title }
 func (l List) Description() Description { return l.description }
 func (l List) Version() int64           { return l.version }
@@ -55,7 +51,7 @@ func (l *List) Apply(p ListPatch) error {
 		description = *p.Description
 	}
 
-	t, d, err := parseText(title, description)
+	t, d, err := ParseText(title, description)
 	if err != nil {
 		return err
 	}

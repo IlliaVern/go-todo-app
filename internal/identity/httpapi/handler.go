@@ -90,7 +90,7 @@ func busy(w http.ResponseWriter, r *http.Request) {
 }
 
 // Authenticate is middleware requiring "Authorization: Bearer <token>". It
-// stores the caller's user id for httpx.UserID.
+// stores the caller's user id for httpx.CallerID.
 func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
@@ -115,6 +115,6 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(httpx.WithUserID(r.Context(), userID)))
+		next.ServeHTTP(w, r.WithContext(httpx.WithCallerID(r.Context(), userID)))
 	})
 }

@@ -41,8 +41,24 @@ func (h *Handler) Register(mux *http.ServeMux, auth func(http.Handler) http.Hand
 	handle("DELETE /api/items/{id}", h.deleteItem)
 }
 
+// owner returns the authenticated caller as the owner of todo data.
+func owner(w http.ResponseWriter, r *http.Request) (domain.OwnerID, bool) {
+	id, ok := httpx.CallerID(w, r)
+	return domain.OwnerID(id), ok
+}
+
+// target reads the caller and the {id} path wildcard as an id of type T.
+func target[T ~int64](w http.ResponseWriter, r *http.Request) (domain.OwnerID, T, bool) {
+	o, ok := owner(w, r)
+	if !ok {
+		return 0, 0, false
+	}
+	id, ok := httpx.PathID(w, r)
+	return o, T(id), ok
+}
+
 func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
+	o, ok := owner(w, r)
 	if !ok {
 		return
 	}
@@ -51,21 +67,21 @@ func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.svc.CreateList(r.Context(), userID, req.Title, req.Description)
+	id, err := h.svc.CreateList(r.Context(), o, req.Title, req.Description)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: id})
+	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: int64(id)})
 }
 
 func (h *Handler) getAllLists(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
+	o, ok := owner(w, r)
 	if !ok {
 		return
 	}
 
-	lists, err := h.svc.Lists(r.Context(), userID)
+	lists, err := h.svc.Lists(r.Context(), o)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -74,16 +90,12 @@ func (h *Handler) getAllLists(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getListByID(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	listID, ok := httpx.PathID(w, r)
+	o, id, ok := target[domain.ListID](w, r)
 	if !ok {
 		return
 	}
 
-	list, err := h.svc.List(r.Context(), userID, listID)
+	list, err := h.svc.List(r.Context(), o, id)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -92,11 +104,7 @@ func (h *Handler) getListByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateList(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	listID, ok := httpx.PathID(w, r)
+	o, id, ok := target[domain.ListID](w, r)
 	if !ok {
 		return
 	}
@@ -106,7 +114,7 @@ func (h *Handler) updateList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patch := domain.ListPatch{Title: req.Title, Description: req.Description}
-	if err := h.svc.UpdateList(r.Context(), userID, listID, patch); err != nil {
+	if err := h.svc.UpdateList(r.Context(), o, id, patch); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -114,16 +122,12 @@ func (h *Handler) updateList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteList(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	listID, ok := httpx.PathID(w, r)
+	o, id, ok := target[domain.ListID](w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.svc.DeleteList(r.Context(), userID, listID); err != nil {
+	if err := h.svc.DeleteList(r.Context(), o, id); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -131,11 +135,7 @@ func (h *Handler) deleteList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	listID, ok := httpx.PathID(w, r)
+	o, list, ok := target[domain.ListID](w, r)
 	if !ok {
 		return
 	}
@@ -144,25 +144,21 @@ func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.svc.AddItem(r.Context(), userID, listID, req.Title, req.Description)
+	id, err := h.svc.AddItem(r.Context(), o, list, req.Title, req.Description)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: id})
+	httpx.JSON(w, r, http.StatusOK, httpx.IDResponse{ID: int64(id)})
 }
 
 func (h *Handler) getAllItems(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	listID, ok := httpx.PathID(w, r)
+	o, list, ok := target[domain.ListID](w, r)
 	if !ok {
 		return
 	}
 
-	items, err := h.svc.Items(r.Context(), userID, listID)
+	items, err := h.svc.Items(r.Context(), o, list)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -171,16 +167,12 @@ func (h *Handler) getAllItems(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getItemByID(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	itemID, ok := httpx.PathID(w, r)
+	o, id, ok := target[domain.ItemID](w, r)
 	if !ok {
 		return
 	}
 
-	item, err := h.svc.Item(r.Context(), userID, itemID)
+	item, err := h.svc.Item(r.Context(), o, id)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -189,11 +181,7 @@ func (h *Handler) getItemByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	itemID, ok := httpx.PathID(w, r)
+	o, id, ok := target[domain.ItemID](w, r)
 	if !ok {
 		return
 	}
@@ -203,7 +191,7 @@ func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patch := domain.ItemPatch{Title: req.Title, Description: req.Description, Done: req.Done}
-	if err := h.svc.UpdateItem(r.Context(), userID, itemID, patch); err != nil {
+	if err := h.svc.UpdateItem(r.Context(), o, id, patch); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -211,30 +199,26 @@ func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteItem(w http.ResponseWriter, r *http.Request) {
-	userID, ok := httpx.UserID(w, r)
-	if !ok {
-		return
-	}
-	itemID, ok := httpx.PathID(w, r)
+	o, id, ok := target[domain.ItemID](w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.svc.DeleteItem(r.Context(), userID, itemID); err != nil {
+	if err := h.svc.DeleteItem(r.Context(), o, id); err != nil {
 		writeError(w, r, err)
 		return
 	}
 	httpx.OK(w, r)
 }
 
-// writeError maps domain errors to HTTP statuses.
+// writeError maps domain errors to HTTP statuses and client-facing messages.
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var invalid *domain.ValidationError
 	switch {
 	case errors.Is(err, domain.ErrOwnerNotFound):
-		httpx.Error(w, r, http.StatusUnauthorized, err.Error())
+		httpx.ErrorWithReason(w, r, http.StatusUnauthorized, "authenticated user no longer exists", err.Error())
 	case errors.Is(err, domain.ErrConcurrentUpdate):
-		httpx.Error(w, r, http.StatusConflict, err.Error())
+		httpx.ErrorWithReason(w, r, http.StatusConflict, "the resource was modified concurrently, retry the request", err.Error())
 	case errors.Is(err, domain.ErrListNotFound), errors.Is(err, domain.ErrItemNotFound):
 		httpx.Error(w, r, http.StatusNotFound, err.Error())
 	case errors.As(err, &invalid):

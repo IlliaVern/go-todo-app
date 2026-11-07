@@ -47,8 +47,8 @@ func NewDescription(s string) (Description, error) {
 
 func (d Description) String() string { return d.value }
 
-// parseText validates raw title and description input together.
-func parseText(title, description string) (Title, Description, error) {
+// ParseText validates raw title and description input together.
+func ParseText(title, description string) (Title, Description, error) {
 	t, err := NewTitle(title)
 	if err != nil {
 		return Title{}, Description{}, err

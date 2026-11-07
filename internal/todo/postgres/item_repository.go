@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,8 +22,10 @@ type itemRow struct {
 }
 
 func (r itemRow) toDomain() domain.Item {
-	return domain.RestoreItem(r.ID, r.ListID, r.Title, r.Description, r.Done, r.Version)
+	return domain.RestoreItem(domain.ItemID(r.ID), domain.ListID(r.ListID), r.Title, r.Description, r.Done, r.Version)
 }
+
+const itemColumns = `ti.id, ti.list_id, ti.title, ti.description, ti.done, ti.version`
 
 type ItemRepository struct {
 	db *pgxpool.Pool
@@ -32,49 +35,52 @@ func NewItemRepository(db *pgxpool.Pool) *ItemRepository {
 	return &ItemRepository{db: db}
 }
 
-func (r *ItemRepository) Add(ctx context.Context, ownerID int64, item domain.Item) (int64, error) {
-	var id int64
+func (r *ItemRepository) Add(ctx context.Context, owner domain.OwnerID, item domain.Item) (domain.ItemID, error) {
+	var id domain.ItemID
 	// Inserting through a SELECT on the owner's list enforces ownership in SQL.
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO todo_items (list_id, title, description, done)
 		 SELECT tl.id, $2, $3, $4 FROM todo_lists tl WHERE tl.id = $1 AND tl.user_id = $5
 		 RETURNING id`,
-		item.ListID(), item.Title().String(), item.Description().String(), item.Done(), ownerID,
+		item.ListID(), item.Title().String(), item.Description().String(), item.Done(), owner,
 	).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) || postgres.IsForeignKeyViolation(err) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows), postgres.IsForeignKeyViolation(err):
 		return 0, domain.ErrListNotFound
+	case err != nil:
+		return 0, fmt.Errorf("insert todo item: %w", err)
 	}
-	return id, err
+	return id, nil
 }
 
-func (r *ItemRepository) Get(ctx context.Context, ownerID, itemID int64) (domain.Item, error) {
+func (r *ItemRepository) Get(ctx context.Context, owner domain.OwnerID, id domain.ItemID) (domain.Item, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT ti.id, ti.list_id, ti.title, ti.description, ti.done, ti.version
+		`SELECT `+itemColumns+`
 		   FROM todo_items ti
 		   JOIN todo_lists tl ON tl.id = ti.list_id
 		  WHERE ti.id = $1 AND tl.user_id = $2`,
-		itemID, ownerID)
+		id, owner)
 	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[itemRow])
-	if errors.Is(err, pgx.ErrNoRows) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Item{}, domain.ErrItemNotFound
-	}
-	if err != nil {
-		return domain.Item{}, err
+	case err != nil:
+		return domain.Item{}, fmt.Errorf("select todo item: %w", err)
 	}
 	return row.toDomain(), nil
 }
 
-func (r *ItemRepository) ListByList(ctx context.Context, ownerID, listID int64) ([]domain.Item, error) {
+func (r *ItemRepository) ByList(ctx context.Context, owner domain.OwnerID, list domain.ListID) ([]domain.Item, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT ti.id, ti.list_id, ti.title, ti.description, ti.done, ti.version
+		`SELECT `+itemColumns+`
 		   FROM todo_items ti
 		   JOIN todo_lists tl ON tl.id = ti.list_id
 		  WHERE ti.list_id = $1 AND tl.user_id = $2
 		  ORDER BY ti.id`,
-		listID, ownerID)
+		list, owner)
 	itemRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[itemRow])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select todo items: %w", err)
 	}
 
 	items := make([]domain.Item, 0, len(itemRows))
@@ -84,29 +90,32 @@ func (r *ItemRepository) ListByList(ctx context.Context, ownerID, listID int64) 
 	return items, nil
 }
 
-func (r *ItemRepository) Update(ctx context.Context, ownerID int64, item domain.Item) error {
-	tag, err := r.db.Exec(ctx,
+func (r *ItemRepository) Update(ctx context.Context, owner domain.OwnerID, item domain.Item) (domain.Item, error) {
+	rows, _ := r.db.Query(ctx,
 		`UPDATE todo_items ti
 		    SET title = $1, description = $2, done = $3, version = ti.version + 1
 		   FROM todo_lists tl
-		  WHERE tl.id = ti.list_id AND ti.id = $4 AND tl.user_id = $5 AND ti.version = $6`,
-		item.Title().String(), item.Description().String(), item.Done(), item.ID(), ownerID, item.Version())
-	if err != nil || tag.RowsAffected() == 1 {
-		return err
+		  WHERE tl.id = ti.list_id AND ti.id = $4 AND tl.user_id = $5 AND ti.version = $6
+		  RETURNING `+itemColumns,
+		item.Title().String(), item.Description().String(), item.Done(), item.ID(), owner, item.Version())
+	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[itemRow])
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Item{}, missingOrConflict(r.Get(ctx, owner, item.ID()))
+	case err != nil:
+		return domain.Item{}, fmt.Errorf("update todo item: %w", err)
 	}
-
-	// No row matched: either the item is gone or it changed since it was loaded.
-	if _, err := r.Get(ctx, ownerID, item.ID()); err != nil {
-		return err
-	}
-	return domain.ErrConcurrentUpdate
+	return row.toDomain(), nil
 }
 
-func (r *ItemRepository) Delete(ctx context.Context, ownerID, itemID int64) error {
+func (r *ItemRepository) Delete(ctx context.Context, owner domain.OwnerID, id domain.ItemID) error {
 	tag, err := r.db.Exec(ctx,
 		`DELETE FROM todo_items ti
 		  USING todo_lists tl
 		  WHERE tl.id = ti.list_id AND ti.id = $1 AND tl.user_id = $2`,
-		itemID, ownerID)
-	return affectedOne(tag, err, domain.ErrItemNotFound)
+		id, owner)
+	if err != nil {
+		return fmt.Errorf("delete todo item: %w", err)
+	}
+	return affectedOne(tag, domain.ErrItemNotFound)
 }

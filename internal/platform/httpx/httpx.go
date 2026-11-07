@@ -1,6 +1,6 @@
 // Package httpx holds net/http helpers shared by the bounded contexts' HTTP
 // adapters: JSON envelopes, request decoding, path ids, the authenticated
-// caller's user id, and request logging and recovery middleware.
+// caller's id, and request logging and recovery middleware.
 package httpx
 
 import (
@@ -97,19 +97,19 @@ func PathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
-type userIDKey struct{}
+type callerIDKey struct{}
 
-// WithUserID returns a context carrying the authenticated caller's id.
-func WithUserID(ctx context.Context, id int64) context.Context {
-	return context.WithValue(ctx, userIDKey{}, id)
+// WithCallerID returns a context carrying the authenticated caller's id.
+func WithCallerID(ctx context.Context, id int64) context.Context {
+	return context.WithValue(ctx, callerIDKey{}, id)
 }
 
-// UserID returns the authenticated caller's id, answering 500 when the
+// CallerID returns the authenticated caller's id, answering 500 when the
 // authentication middleware did not run.
-func UserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	if id, ok := r.Context().Value(userIDKey{}).(int64); ok {
+func CallerID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	if id, ok := r.Context().Value(callerIDKey{}).(int64); ok {
 		return id, true
 	}
-	InternalError(w, r, errors.New("user id missing from request context: authentication middleware not mounted"))
+	InternalError(w, r, errors.New("caller id missing from request context: authentication middleware not mounted"))
 	return 0, false
 }

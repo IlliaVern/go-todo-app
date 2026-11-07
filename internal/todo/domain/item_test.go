@@ -8,16 +8,10 @@ import (
 )
 
 func TestNewItem(t *testing.T) {
-	item, err := domain.NewItem(3, "Milk", "2 l")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if item.ListID() != 3 || item.Title().String() != "Milk" || item.Description().String() != "2 l" || item.Done() {
+	title, description, _ := domain.ParseText("Milk", "2 l")
+	item := domain.NewItem(3, title, description)
+	if item.ListID() != 3 || item.Title() != title || item.Description() != description || item.Done() || item.ID() != 0 {
 		t.Errorf("got %+v", item)
-	}
-
-	if _, err := domain.NewItem(3, "", ""); !errors.Is(err, domain.ErrTitleRequired) {
-		t.Errorf("empty title: err = %v, want %v", err, domain.ErrTitleRequired)
 	}
 }
 

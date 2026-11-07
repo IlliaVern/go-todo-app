@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -23,8 +24,10 @@ type listRow struct {
 }
 
 func (r listRow) toDomain() domain.List {
-	return domain.RestoreList(r.ID, r.UserID, r.Title, r.Description, r.Version)
+	return domain.RestoreList(domain.ListID(r.ID), domain.OwnerID(r.UserID), r.Title, r.Description, r.Version)
 }
+
+const listColumns = `id, user_id, title, description, version`
 
 type ListRepository struct {
 	db *pgxpool.Pool
@@ -34,39 +37,42 @@ func NewListRepository(db *pgxpool.Pool) *ListRepository {
 	return &ListRepository{db: db}
 }
 
-func (r *ListRepository) Add(ctx context.Context, list domain.List) (int64, error) {
-	var id int64
+func (r *ListRepository) Add(ctx context.Context, list domain.List) (domain.ListID, error) {
+	var id domain.ListID
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO todo_lists (user_id, title, description) VALUES ($1, $2, $3) RETURNING id`,
 		list.OwnerID(), list.Title().String(), list.Description().String(),
 	).Scan(&id)
-	if postgres.IsForeignKeyViolation(err) {
+	switch {
+	case postgres.IsForeignKeyViolation(err):
 		return 0, domain.ErrOwnerNotFound
+	case err != nil:
+		return 0, fmt.Errorf("insert todo list: %w", err)
 	}
-	return id, err
+	return id, nil
 }
 
-func (r *ListRepository) Get(ctx context.Context, ownerID, listID int64) (domain.List, error) {
+func (r *ListRepository) Get(ctx context.Context, owner domain.OwnerID, id domain.ListID) (domain.List, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT id, user_id, title, description, version FROM todo_lists WHERE id = $1 AND user_id = $2`,
-		listID, ownerID)
+		`SELECT `+listColumns+` FROM todo_lists WHERE id = $1 AND user_id = $2`,
+		id, owner)
 	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[listRow])
-	if errors.Is(err, pgx.ErrNoRows) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
 		return domain.List{}, domain.ErrListNotFound
-	}
-	if err != nil {
-		return domain.List{}, err
+	case err != nil:
+		return domain.List{}, fmt.Errorf("select todo list: %w", err)
 	}
 	return row.toDomain(), nil
 }
 
-func (r *ListRepository) ListByOwner(ctx context.Context, ownerID int64) ([]domain.List, error) {
+func (r *ListRepository) ByOwner(ctx context.Context, owner domain.OwnerID) ([]domain.List, error) {
 	rows, _ := r.db.Query(ctx,
-		`SELECT id, user_id, title, description, version FROM todo_lists WHERE user_id = $1 ORDER BY id`,
-		ownerID)
+		`SELECT `+listColumns+` FROM todo_lists WHERE user_id = $1 ORDER BY id`,
+		owner)
 	listRows, err := pgx.CollectRows(rows, pgx.RowToStructByName[listRow])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select todo lists: %w", err)
 	}
 
 	lists := make([]domain.List, 0, len(listRows))
@@ -76,43 +82,43 @@ func (r *ListRepository) ListByOwner(ctx context.Context, ownerID int64) ([]doma
 	return lists, nil
 }
 
-func (r *ListRepository) Update(ctx context.Context, list domain.List) error {
-	tag, err := r.db.Exec(ctx,
+func (r *ListRepository) Update(ctx context.Context, list domain.List) (domain.List, error) {
+	rows, _ := r.db.Query(ctx,
 		`UPDATE todo_lists SET title = $1, description = $2, version = version + 1
-		  WHERE id = $3 AND user_id = $4 AND version = $5`,
+		  WHERE id = $3 AND user_id = $4 AND version = $5
+		  RETURNING `+listColumns,
 		list.Title().String(), list.Description().String(), list.ID(), list.OwnerID(), list.Version())
-	if err != nil || tag.RowsAffected() == 1 {
-		return err
+	row, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[listRow])
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.List{}, missingOrConflict(r.Get(ctx, list.OwnerID(), list.ID()))
+	case err != nil:
+		return domain.List{}, fmt.Errorf("update todo list: %w", err)
 	}
-	return r.missingOrConflict(ctx, list.OwnerID(), list.ID())
+	return row.toDomain(), nil
 }
 
-// missingOrConflict explains an update that matched no row.
-func (r *ListRepository) missingOrConflict(ctx context.Context, ownerID, listID int64) error {
-	var exists bool
-	if err := r.db.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM todo_lists WHERE id = $1 AND user_id = $2)`,
-		listID, ownerID).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
-		return domain.ErrConcurrentUpdate
-	}
-	return domain.ErrListNotFound
-}
-
-func (r *ListRepository) Delete(ctx context.Context, ownerID, listID int64) error {
+func (r *ListRepository) Delete(ctx context.Context, owner domain.OwnerID, id domain.ListID) error {
 	tag, err := r.db.Exec(ctx,
 		`DELETE FROM todo_lists WHERE id = $1 AND user_id = $2`,
-		listID, ownerID)
-	return affectedOne(tag, err, domain.ErrListNotFound)
+		id, owner)
+	if err != nil {
+		return fmt.Errorf("delete todo list: %w", err)
+	}
+	return affectedOne(tag, domain.ErrListNotFound)
 }
 
-// affectedOne turns "no row matched" into notFound.
-func affectedOne(tag pgconn.CommandTag, err, notFound error) error {
-	if err != nil {
-		return err
+// missingOrConflict explains a version-checked update that matched no row,
+// given the owner-scoped reload of the same aggregate: if it still exists,
+// another writer changed it first.
+func missingOrConflict[T any](_ T, reloadErr error) error {
+	if reloadErr != nil {
+		return reloadErr
 	}
+	return domain.ErrConcurrentUpdate
+}
+
+func affectedOne(tag pgconn.CommandTag, notFound error) error {
 	if tag.RowsAffected() == 0 {
 		return notFound
 	}

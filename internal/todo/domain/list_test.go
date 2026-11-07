@@ -10,7 +10,7 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
-func TestNewList(t *testing.T) {
+func TestParseText(t *testing.T) {
 	tests := []struct {
 		name        string
 		title       string
@@ -29,17 +29,22 @@ func TestNewList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			list, err := domain.NewList(7, tt.title, tt.description)
+			title, description, err := domain.ParseText(tt.title, tt.description)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if err != nil {
-				return
-			}
-			if list.OwnerID() != 7 || list.Title().String() != tt.title || list.Description().String() != tt.description || list.ID() != 0 {
-				t.Errorf("got %+v", list)
+			if err == nil && (title.String() != tt.title || description.String() != tt.description) {
+				t.Errorf("got %q %q", title, description)
 			}
 		})
+	}
+}
+
+func TestNewList(t *testing.T) {
+	title, description, _ := domain.ParseText("Groceries", "weekly")
+	list := domain.NewList(7, title, description)
+	if list.OwnerID() != 7 || list.Title() != title || list.Description() != description || list.ID() != 0 || list.Version() != 0 {
+		t.Errorf("got %+v", list)
 	}
 }
 
