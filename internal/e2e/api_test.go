@@ -161,7 +161,7 @@ func TestAPI(t *testing.T) {
 		}
 
 		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": ""}), http.StatusBadRequest, nil)
-		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": strings.Repeat("p", 73)}), http.StatusBadRequest, nil)
+		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": strings.Repeat("p", 1025)}), http.StatusBadRequest, nil)
 		anon.expect(anon.do("POST", "/auth/sign-up", `{"name":`), http.StatusBadRequest, nil)
 		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B\x00", "username": username + "-c", "password": "x"}), http.StatusBadRequest, nil)
 		anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": "a\x00b", "password": "x"}), http.StatusUnauthorized, nil)

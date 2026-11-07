@@ -30,7 +30,7 @@ func NewHandler(db *pgxpool.Pool, signingKey string, logger *slog.Logger) (http.
 		return nil, err
 	}
 
-	identitySvc, err := identityapp.NewService(identitypg.NewUserRepository(db), password.NewBcrypt(), tokens)
+	identitySvc, err := identityapp.NewService(identitypg.NewUserRepository(db), password.NewArgon2id(), tokens)
 	if err != nil {
 		return nil, fmt.Errorf("identity service: %w", err)
 	}

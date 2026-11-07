@@ -14,8 +14,8 @@ const (
 	// MaxNameLength and MaxUsernameLength mirror the varchar(255) columns in schema/.
 	MaxNameLength     = 255
 	MaxUsernameLength = 255
-	// MaxPasswordBytes is bcrypt's input limit.
-	MaxPasswordBytes = 72
+	// MaxPasswordBytes bounds hashing input; argon2id has no length limit of its own.
+	MaxPasswordBytes = 1024
 )
 
 var (

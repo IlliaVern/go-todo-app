@@ -40,13 +40,13 @@ type fakeHasher struct {
 	compared []string
 }
 
-func (h *fakeHasher) Hash(p string) (string, error) {
+func (h *fakeHasher) Hash(_ context.Context, p string) (string, error) {
 	h.hashed++
 	return "hashed:" + p, nil
 }
-func (h *fakeHasher) Matches(hash, p string) bool {
+func (h *fakeHasher) Matches(_ context.Context, hash, p string) (bool, error) {
 	h.compared = append(h.compared, hash)
-	return hash == "hashed:"+p
+	return hash == "hashed:"+p, nil
 }
 
 type fakeTokens struct{}
@@ -103,7 +103,7 @@ func TestSignUpErrors(t *testing.T) {
 	}{
 		{name: "duplicate username", fullName: "Ada", username: "ada", password: "x", wantErr: domain.ErrUsernameTaken},
 		{name: "empty password", fullName: "Bob", username: "bob", password: "", wantErr: domain.ErrPasswordRequired},
-		{name: "password too long", fullName: "Bob", username: "bob", password: strings.Repeat("p", 73), wantErr: domain.ErrPasswordTooLong},
+		{name: "password too long", fullName: "Bob", username: "bob", password: strings.Repeat("p", 1025), wantErr: domain.ErrPasswordTooLong},
 		{name: "missing name", fullName: "", username: "bob", password: "x", wantErr: domain.ErrNameRequired},
 	}
 	for _, tt := range tests {

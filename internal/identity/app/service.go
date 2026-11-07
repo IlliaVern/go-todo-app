@@ -16,11 +16,12 @@ var (
 	ErrInvalidToken       = errors.New("invalid or expired access token")
 )
 
-// PasswordHasher hashes and verifies passwords.
+// PasswordHasher hashes and verifies passwords. Both calls may wait for a
+// free hashing slot and fail when ctx ends first.
 type PasswordHasher interface {
-	Hash(password string) (string, error)
+	Hash(ctx context.Context, password string) (string, error)
 	// Matches reports whether password corresponds to hash.
-	Matches(hash, password string) bool
+	Matches(ctx context.Context, hash, password string) (bool, error)
 }
 
 // TokenManager issues and verifies access tokens carrying a user id.
@@ -39,7 +40,7 @@ type Service struct {
 }
 
 func NewService(users domain.UserRepository, hasher PasswordHasher, tokens TokenManager) (*Service, error) {
-	dummyHash, err := hasher.Hash("timing-equalisation-placeholder")
+	dummyHash, err := hasher.Hash(context.Background(), "timing-equalisation-placeholder")
 	if err != nil {
 		return nil, fmt.Errorf("hash dummy password: %w", err)
 	}
@@ -54,7 +55,7 @@ func (s *Service) SignUp(ctx context.Context, name, username, password string) (
 	if err := domain.ValidatePassword(password); err != nil {
 		return 0, err
 	}
-	hash, err := s.hasher.Hash(password)
+	hash, err := s.hasher.Hash(ctx, password)
 	if err != nil {
 		return 0, fmt.Errorf("hash password: %w", err)
 	}
@@ -69,24 +70,35 @@ func (s *Service) SignUp(ctx context.Context, name, username, password string) (
 func (s *Service) SignIn(ctx context.Context, username, password string) (string, error) {
 	// A NUL byte cannot match any stored username, and PostgreSQL rejects it.
 	if strings.ContainsRune(username, 0) {
-		s.hasher.Matches(s.dummyHash, password)
-		return "", ErrInvalidCredentials
+		return "", s.rejectAfterDummyCheck(ctx, password)
 	}
 
 	user, err := s.users.ByUsername(ctx, username)
 	if errors.Is(err, domain.ErrUserNotFound) {
-		s.hasher.Matches(s.dummyHash, password)
-		return "", ErrInvalidCredentials
+		return "", s.rejectAfterDummyCheck(ctx, password)
 	}
 	if err != nil {
 		return "", err
 	}
 
-	if !s.hasher.Matches(user.PasswordHash(), password) {
+	ok, err := s.hasher.Matches(ctx, user.PasswordHash(), password)
+	if err != nil {
+		return "", fmt.Errorf("verify password: %w", err)
+	}
+	if !ok {
 		return "", ErrInvalidCredentials
 	}
 
 	return s.tokens.Issue(user.ID())
+}
+
+// rejectAfterDummyCheck spends the same hashing work as a real check, so
+// unknown usernames cannot be told apart by timing.
+func (s *Service) rejectAfterDummyCheck(ctx context.Context, password string) error {
+	if _, err := s.hasher.Matches(ctx, s.dummyHash, password); err != nil {
+		return fmt.Errorf("verify password: %w", err)
+	}
+	return ErrInvalidCredentials
 }
 
 // Authenticate returns the user id carried by a valid token, or ErrInvalidToken.

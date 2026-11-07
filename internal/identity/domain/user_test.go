@@ -43,9 +43,9 @@ func TestValidatePassword(t *testing.T) {
 	}{
 		{name: "valid", password: "s3cret"},
 		{name: "empty", password: "", wantErr: domain.ErrPasswordRequired},
-		{name: "72 bytes", password: strings.Repeat("p", 72)},
-		{name: "73 bytes", password: strings.Repeat("p", 73), wantErr: domain.ErrPasswordTooLong},
-		{name: "multibyte over limit", password: strings.Repeat("я", 37), wantErr: domain.ErrPasswordTooLong}, // 74 bytes
+		{name: "1024 bytes", password: strings.Repeat("p", 1024)},
+		{name: "1025 bytes", password: strings.Repeat("p", 1025), wantErr: domain.ErrPasswordTooLong},
+		{name: "multibyte over limit", password: strings.Repeat("я", 513), wantErr: domain.ErrPasswordTooLong}, // 1026 bytes
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
