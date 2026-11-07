@@ -51,7 +51,11 @@ func run() error {
 	}
 	defer db.Close()
 
-	handler, err := api.NewHandler(db, cfg.SigningKey, logger)
+	handler, err := api.NewHandler(db, api.Options{
+		SigningKey:            cfg.SigningKey,
+		AuthRequestsPerMinute: cfg.AuthRequestsPerMinute,
+		Logger:                logger,
+	})
 	if err != nil {
 		return fmt.Errorf("build api: %w", err)
 	}

@@ -16,9 +16,10 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := config.Config{
-		Port:       "8000",
-		LogLevel:   "info",
-		SigningKey: "key",
+		Port:                  "8000",
+		LogLevel:              "info",
+		SigningKey:            "key",
+		AuthRequestsPerMinute: 20,
 		DB: config.DB{
 			Host: "localhost", Port: "5436", Username: "postgres", Password: "pw", Name: "postgres", SSLMode: "disable",
 		},

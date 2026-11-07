@@ -15,7 +15,9 @@ type Config struct {
 	Port       string `env:"PORT" envDefault:"8000"`
 	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
 	SigningKey string `env:"AUTH_SIGNING_KEY,notEmpty"`
-	DB         DB     `envPrefix:"DB_"`
+	// AuthRequestsPerMinute limits sign-up and sign-in requests per client IP.
+	AuthRequestsPerMinute int `env:"AUTH_RATE_LIMIT_PER_MINUTE" envDefault:"20"`
+	DB                    DB  `envPrefix:"DB_"`
 }
 
 // DB holds the DB_* connection settings.

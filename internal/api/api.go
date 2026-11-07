@@ -23,9 +23,17 @@ import (
 
 const tokenTTL = 12 * time.Hour
 
+// Options configures NewHandler.
+type Options struct {
+	SigningKey string
+	// AuthRequestsPerMinute limits /auth requests per client.
+	AuthRequestsPerMinute int
+	Logger                *slog.Logger
+}
+
 // NewHandler returns the HTTP handler serving the whole API.
-func NewHandler(db *pgxpool.Pool, signingKey string, logger *slog.Logger) (http.Handler, error) {
-	tokens, err := token.NewJWT(signingKey, tokenTTL)
+func NewHandler(db *pgxpool.Pool, opts Options) (http.Handler, error) {
+	tokens, err := token.NewJWT(opts.SigningKey, tokenTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +48,8 @@ func NewHandler(db *pgxpool.Pool, signingKey string, logger *slog.Logger) (http.
 	mux.HandleFunc("/", httpx.NotFound)
 
 	identity := identityhttp.NewHandler(identitySvc)
-	identity.Register(mux)
+	identity.Register(mux, httpx.NewRateLimiter(opts.AuthRequestsPerMinute).Middleware)
 	todohttp.NewHandler(todoSvc).Register(mux, identity.Authenticate)
 
-	return httpx.RequestLogger(logger, httpx.Recovery(mux)), nil
+	return httpx.RequestLogger(opts.Logger, httpx.Recovery(mux)), nil
 }

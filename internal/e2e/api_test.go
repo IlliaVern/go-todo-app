@@ -32,7 +32,11 @@ func startAPI(t *testing.T) string {
 	}
 
 	db := pgtest.Start(t)
-	handler, err := api.NewHandler(db, e2eSigningKey, slog.New(slog.DiscardHandler))
+	handler, err := api.NewHandler(db, api.Options{
+		SigningKey:            e2eSigningKey,
+		AuthRequestsPerMinute: 1000, // the suite signs up many users from one address
+		Logger:                slog.New(slog.DiscardHandler),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

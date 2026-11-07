@@ -68,6 +68,8 @@ services:
       DB_PASSWORD: *db-password
       # Unset falls back to a local-only key; set-but-empty is passed through so the app refuses to start.
       AUTH_SIGNING_KEY: ${AUTH_SIGNING_KEY-local-dev-signing-key-do-not-use-in-production}
+      # Generous for local use and `make e2e`; the app default is 20.
+      AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-300}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
