@@ -66,8 +66,16 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           ref="${IMAGE,,}:${VERSION}"
-          if docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then
+          if out=$(docker buildx imagetools inspect "$ref" 2>&1); then
             echo "$ref already exists; choose a new version." >&2
+            exit 1
+          fi
+          # Proceed only when the registry reports the tag or package as missing
+          # (OCI MANIFEST_UNKNOWN / NAME_UNKNOWN); any other failure, such as a
+          # network or auth error, stops the release rather than risk an overwrite.
+          if ! grep -qiE "not found|manifest unknown|name unknown" <<<"$out"; then
+            echo "Could not check whether $ref exists:" >&2
+            echo "$out" >&2
             exit 1
           fi
 

@@ -14,8 +14,10 @@ on:
 permissions:
   contents: read
 
+# github.workflow names the caller when release.yml runs this as its gate, so
+# a manual CI run and a release gate never cancel each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

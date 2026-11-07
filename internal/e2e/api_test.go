@@ -337,7 +337,7 @@ func TestAPI(t *testing.T) {
 		patches := []map[string]any{{"title": "new"}, {"done": true}, {"description": "d"}}
 		for _, status := range concurrently(user, "PATCH", itemPath, patches) {
 			if status != http.StatusOK {
-				t.Errorf("concurrent PUT status = %d, want 200", status)
+				t.Errorf("concurrent PATCH status = %d, want 200", status)
 			}
 		}
 
