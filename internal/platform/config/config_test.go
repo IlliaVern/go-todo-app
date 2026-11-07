@@ -59,3 +59,14 @@ func TestLoadRequiresSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRejectsRateLimitBelowOne(t *testing.T) {
+	t.Setenv("DB_PASSWORD", "pw")
+	t.Setenv("AUTH_SIGNING_KEY", "key")
+	for _, v := range []string{"0", "-5"} {
+		t.Setenv("AUTH_RATE_LIMIT_PER_MINUTE", v)
+		if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "AUTH_RATE_LIMIT_PER_MINUTE") {
+			t.Errorf("value %s: err = %v, want a rate limit error", v, err)
+		}
+	}
+}

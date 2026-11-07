@@ -1,4 +1,4 @@
-# Only go.mod, go.sum, Go sources and configs/ are needed to build the image.
+# Only go.mod, go.sum and the Go sources are needed to build the image.
 .git
 .gitignore
 .dockerignore

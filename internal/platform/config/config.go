@@ -62,5 +62,8 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("load config: %w", err)
 	}
+	if cfg.AuthRequestsPerMinute < 1 {
+		return Config{}, fmt.Errorf("load config: AUTH_RATE_LIMIT_PER_MINUTE must be at least 1, got %d", cfg.AuthRequestsPerMinute)
+	}
 	return cfg, nil
 }
