@@ -14,6 +14,9 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
 	ErrInvalidToken       = errors.New("invalid or expired access token")
+	// ErrHasherBusy is returned by PasswordHasher implementations that shed
+	// load instead of queueing indefinitely.
+	ErrHasherBusy = errors.New("server is busy, retry later")
 )
 
 // PasswordHasher hashes and verifies passwords. Both calls may wait for a

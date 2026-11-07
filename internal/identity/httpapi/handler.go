@@ -46,6 +46,8 @@ func (h *Handler) signUp(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrUsernameTaken):
 		httpx.Error(w, r, http.StatusConflict, err.Error())
+	case errors.Is(err, app.ErrHasherBusy):
+		busy(w, r)
 	case err != nil:
 		httpx.InternalError(w, r, err)
 	default:
@@ -72,11 +74,19 @@ func (h *Handler) signIn(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, app.ErrInvalidCredentials):
 		httpx.Error(w, r, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, app.ErrHasherBusy):
+		busy(w, r)
 	case err != nil:
 		httpx.InternalError(w, r, err)
 	default:
 		httpx.JSON(w, r, http.StatusOK, signInResponse{Token: token})
 	}
+}
+
+// busy sheds load while password hashing is saturated.
+func busy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Retry-After", "2")
+	httpx.Error(w, r, http.StatusServiceUnavailable, app.ErrHasherBusy.Error())
 }
 
 // Authenticate is middleware requiring "Authorization: Bearer <token>". It

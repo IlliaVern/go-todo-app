@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/IlliaVern/go-todo-app/internal/identity/password"
 )
@@ -15,7 +16,7 @@ var cheap = password.Params{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen
 
 func TestHashAndMatch(t *testing.T) {
 	ctx := context.Background()
-	h := password.NewArgon2idWithParams(cheap, 2)
+	h := password.NewArgon2idWithParams(cheap, 2, time.Second)
 
 	hash, err := h.Hash(ctx, "correct horse")
 	if err != nil {
@@ -47,10 +48,10 @@ func TestHashAndMatch(t *testing.T) {
 
 func TestMatchesUsesParamsStoredInHash(t *testing.T) {
 	ctx := context.Background()
-	old := password.NewArgon2idWithParams(cheap, 1)
+	old := password.NewArgon2idWithParams(cheap, 1, time.Second)
 	hash, _ := old.Hash(ctx, "pw")
 
-	stronger := password.NewArgon2idWithParams(password.Params{Memory: 128, Time: 2, Threads: 1, SaltLen: 16, KeyLen: 32}, 1)
+	stronger := password.NewArgon2idWithParams(password.Params{Memory: 128, Time: 2, Threads: 1, SaltLen: 16, KeyLen: 32}, 1, time.Second)
 	if ok, err := stronger.Matches(ctx, hash, "pw"); err != nil || !ok {
 		t.Errorf("hash made with other params did not verify: %v, %v", ok, err)
 	}
@@ -64,7 +65,7 @@ func TestDefaultParamsMeetOWASPMinimum(t *testing.T) {
 }
 
 func TestMatchesRejectsMalformedHashes(t *testing.T) {
-	h := password.NewArgon2idWithParams(cheap, 1)
+	h := password.NewArgon2idWithParams(cheap, 1, time.Second)
 	for _, bad := range []string{
 		"",
 		"$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234", // bcrypt
@@ -83,14 +84,14 @@ func TestMatchesRejectsMalformedHashes(t *testing.T) {
 func TestHashRespectsCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := password.NewArgon2idWithParams(cheap, 1).Hash(ctx, "pw"); !errors.Is(err, context.Canceled) {
+	if _, err := password.NewArgon2idWithParams(cheap, 1, time.Second).Hash(ctx, "pw"); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }
 
 func TestLongPasswordsAreNotTruncated(t *testing.T) {
 	ctx := context.Background()
-	h := password.NewArgon2idWithParams(cheap, 1)
+	h := password.NewArgon2idWithParams(cheap, 1, time.Second)
 	long := strings.Repeat("a", 100)
 	hash, _ := h.Hash(ctx, long)
 	if ok, _ := h.Matches(ctx, hash, long[:72]); ok {

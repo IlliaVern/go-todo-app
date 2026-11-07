@@ -13,8 +13,11 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/argon2"
+
+	"github.com/IlliaVern/go-todo-app/internal/identity/app"
 )
 
 // Params are argon2id cost parameters. Memory is in KiB.
@@ -35,22 +38,30 @@ var ErrMalformedHash = errors.New("malformed argon2id hash")
 
 var b64 = base64.RawStdEncoding
 
+// DefaultMaxWait is how long a call waits for a free hashing slot before
+// failing with app.ErrHasherBusy.
+const DefaultMaxWait = 2 * time.Second
+
 // Argon2id hashes passwords. Each hash allocates Params.Memory KiB, so at most
-// a fixed number run at once; further calls wait or give up with their context.
+// a fixed number run at once. Further calls wait up to maxWait for a slot and
+// then fail fast with app.ErrHasherBusy (load shedding), or give up earlier
+// when their context ends.
 type Argon2id struct {
-	params Params
-	slots  chan struct{}
+	params  Params
+	slots   chan struct{}
+	maxWait time.Duration
 }
 
 // NewArgon2id returns a hasher using DefaultParams that runs at most
-// GOMAXPROCS hashes concurrently.
+// GOMAXPROCS hashes concurrently and waits at most DefaultMaxWait for a slot.
 func NewArgon2id() *Argon2id {
-	return NewArgon2idWithParams(DefaultParams, runtime.GOMAXPROCS(0))
+	return NewArgon2idWithParams(DefaultParams, runtime.GOMAXPROCS(0), DefaultMaxWait)
 }
 
-// NewArgon2idWithParams returns a hasher with custom cost and concurrency.
-func NewArgon2idWithParams(p Params, maxConcurrent int) *Argon2id {
-	return &Argon2id{params: p, slots: make(chan struct{}, max(maxConcurrent, 1))}
+// NewArgon2idWithParams returns a hasher with custom cost, concurrency and
+// maximum wait for a hashing slot.
+func NewArgon2idWithParams(p Params, maxConcurrent int, maxWait time.Duration) *Argon2id {
+	return &Argon2id{params: p, slots: make(chan struct{}, max(maxConcurrent, 1)), maxWait: maxWait}
 }
 
 func (a *Argon2id) Hash(ctx context.Context, password string) (string, error) {
@@ -86,8 +97,12 @@ func (a *Argon2id) derive(ctx context.Context, password string, salt []byte, p P
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	wait := time.NewTimer(a.maxWait)
+	defer wait.Stop()
 	select {
 	case a.slots <- struct{}{}:
+	case <-wait.C:
+		return nil, app.ErrHasherBusy
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
