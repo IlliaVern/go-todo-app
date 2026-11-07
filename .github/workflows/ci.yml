@@ -1,0 +1,84 @@
+name: CI
+
+# Disabled on purpose: this workflow runs only when started manually from the
+# Actions tab ("Run workflow"). To run it automatically, add for example:
+#
+#   push:
+#     branches: [main]
+#   pull_request:
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+            tools/actionlint/go.sum
+      - run: make lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Repository and end-to-end tests start PostgreSQL with testcontainers;
+      # REQUIRE_DOCKER makes them fail instead of skipping.
+      - run: REQUIRE_DOCKER=1 go test -race -count=1 ./...
+
+  vuln:
+    name: Vulnerability scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - run: make vuln
+
+  stack:
+    name: Compose stack end-to-end
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Start stack
+        run: make up
+      - name: Wait for readiness
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8000/readyz && exit 0
+            sleep 2
+          done
+          echo "API did not become ready" >&2
+          exit 1
+      - name: End-to-end tests against the container
+        run: make e2e
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f docker/compose.yaml logs
+      - name: Stop stack
+        if: always()
+        run: make down ARGS=-v

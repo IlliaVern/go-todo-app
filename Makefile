@@ -1,5 +1,6 @@
 COMPOSE := docker compose -f docker/compose.yaml $(if $(wildcard .env),--env-file .env)
-# Developer tools are pinned in tools/go.mod, apart from the application's dependencies.
+# Developer tools are pinned in tools/go.mod (actionlint in tools/actionlint/go.mod,
+# whose dependencies conflict with golangci-lint's), apart from the application's.
 TOOL := go tool -modfile=tools/go.mod
 
 .DEFAULT_GOAL := help
@@ -36,8 +37,9 @@ test-unit: ## Run tests without Docker (skips repository and end-to-end tests)
 e2e: ## Run the end-to-end tests against the stack started by `make up`
 	E2E_BASE_URL=http://localhost:8000 go test -count=1 ./internal/e2e/
 
-lint: ## Run golangci-lint (formatting, go vet and the linters in .golangci.yml)
+lint: ## Run golangci-lint (formatting, go vet, .golangci.yml linters) and actionlint
 	$(TOOL) golangci-lint run ./...
+	go tool -modfile=tools/actionlint/go.mod actionlint
 
 fmt: ## Format Go sources and group imports
 	$(TOOL) golangci-lint fmt ./...
