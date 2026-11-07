@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/IlliaVern/go-todo-app"
 	"github.com/IlliaVern/go-todo-app/pkg/handler"
@@ -17,63 +21,89 @@ import (
 	"github.com/spf13/viper"
 )
 
+const shutdownTimeout = 10 * time.Second
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
+	if err := run(); err != nil {
+		slog.Error("todo app stopped with error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	// .env is optional: in containers configuration comes from the environment.
+	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("load .env: %w", err)
+	}
+
 	if err := initConfig(); err != nil {
-		fatal("failed to initialize config", err)
+		return fmt.Errorf("init config: %w", err)
 	}
 
-	if err := godotenv.Load(); err != nil {
-		fatal("failed to load env variables", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	db, err := repository.NewPostgresDB(repository.Config{
+	db, err := repository.NewPostgresDB(ctx, repository.Config{
 		Host:     viper.GetString("db.host"),
 		Port:     viper.GetString("db.port"),
 		Username: viper.GetString("db.username"),
 		DBName:   viper.GetString("db.dbname"),
 		SSLMode:  viper.GetString("db.sslmode"),
-		Password: os.Getenv("DB_PASSWORD"),
+		Password: viper.GetString("db.password"),
 	})
 	if err != nil {
-		fatal("failed to connect to database", err)
+		return fmt.Errorf("connect to database: %w", err)
 	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("closing database connection failed", "error", err)
+		}
+	}()
 
 	repos := repository.NewRepository(db)
 	services := service.NewService(repos)
 	handlers := handler.NewHandler(services)
 
-	srv := new(todo.Server)
+	srv := todo.NewServer(viper.GetString("port"), handlers.InitRoutes())
+
+	serverErr := make(chan error, 1)
 	go func() {
-		if err := srv.Run(viper.GetString("port"), handlers.InitRoutes()); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fatal("http server failed", err)
-		}
+		serverErr <- srv.Run()
 	}()
 
 	slog.Info("todo app started", "port", viper.GetString("port"))
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
-	<-quit
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("http server: %w", err)
+	case <-ctx.Done():
+	}
 
 	slog.Info("todo app shutting down")
 
-	if err := srv.Shutdown(context.Background()); err != nil {
-		slog.Error("http server shutdown failed", "error", err)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown http server: %w", err)
 	}
-	if err := db.Close(); err != nil {
-		slog.Error("closing database connection failed", "error", err)
+	if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("http server: %w", err)
 	}
+
+	return nil
 }
 
+// initConfig reads configs/config.yml. Every key can be overridden by an
+// environment variable named after it with dots replaced by underscores,
+// e.g. db.host -> DB_HOST.
 func initConfig() error {
 	viper.AddConfigPath("configs")
 	viper.SetConfigName("config")
-	return viper.ReadInConfig()
-}
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
 
-func fatal(msg string, err error) {
-	slog.Error(msg, "error", err)
-	os.Exit(1)
+	return viper.ReadInConfig()
 }

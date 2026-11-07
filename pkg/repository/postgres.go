@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
@@ -24,14 +25,14 @@ type Config struct {
 	SSLMode  string
 }
 
-func NewPostgresDB(cfg Config) (*sqlx.DB, error) {
+func NewPostgresDB(ctx context.Context, cfg Config) (*sqlx.DB, error) {
 	db, err := sqlx.Open("pgx", fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s", cfg.Host, cfg.Port, cfg.Username, cfg.DBName, cfg.Password, cfg.SSLMode))
 	if err != nil {
 		return nil, err
 	}
 
-	err = db.Ping()
-	if err != nil {
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 

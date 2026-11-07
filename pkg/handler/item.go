@@ -26,7 +26,7 @@ func (h *Handler) createItem(c *gin.Context) {
 		return
 	}
 
-	id, err := h.services.TodoItem.Create(userId, listId, input)
+	id, err := h.services.TodoItem.Create(c.Request.Context(), userId, listId, input)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -49,7 +49,7 @@ func (h *Handler) getAllItems(c *gin.Context) {
 		return
 	}
 
-	items, err := h.services.TodoItem.GetAll(userId, listId)
+	items, err := h.services.TodoItem.GetAll(c.Request.Context(), userId, listId)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -70,7 +70,7 @@ func (h *Handler) getItemById(c *gin.Context) {
 		return
 	}
 
-	item, err := h.services.TodoItem.GetById(userId, itemId)
+	item, err := h.services.TodoItem.GetById(c.Request.Context(), userId, itemId)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
@@ -97,7 +97,7 @@ func (h *Handler) updateItem(c *gin.Context) {
 		return
 	}
 
-	if err := h.services.TodoItem.Update(userId, id, input); err != nil {
+	if err := h.services.TodoItem.Update(c.Request.Context(), userId, id, input); err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -119,7 +119,7 @@ func (h *Handler) deleteItem(c *gin.Context) {
 		return
 	}
 
-	err = h.services.TodoItem.Delete(userId, itemId)
+	err = h.services.TodoItem.Delete(c.Request.Context(), userId, itemId)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return

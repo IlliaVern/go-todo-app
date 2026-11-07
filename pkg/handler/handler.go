@@ -15,6 +15,7 @@ func NewHandler(services *service.Service) *Handler {
 
 func (h *Handler) InitRoutes() *gin.Engine {
 	router := gin.New()
+	router.Use(gin.Recovery())
 
 	auth := router.Group("/auth")
 	{

@@ -10,15 +10,22 @@ type Server struct {
 	httpServer *http.Server
 }
 
-func (s *Server) Run(port string, handler http.Handler) error {
-	s.httpServer = &http.Server{
-		Addr:           ":" + port,
-		Handler:        handler,
-		MaxHeaderBytes: 1 << 20, // 1MB
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
+func NewServer(port string, handler http.Handler) *Server {
+	return &Server{
+		httpServer: &http.Server{
+			Addr:              ":" + port,
+			Handler:           handler,
+			MaxHeaderBytes:    1 << 20, // 1MB
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 	}
+}
 
+// Run blocks until the server stops. After Shutdown it returns http.ErrServerClosed.
+func (s *Server) Run() error {
 	return s.httpServer.ListenAndServe()
 }
 

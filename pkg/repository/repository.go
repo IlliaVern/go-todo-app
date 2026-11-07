@@ -1,29 +1,31 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/IlliaVern/go-todo-app"
 	"github.com/jmoiron/sqlx"
 )
 
 type Authorization interface {
-	CreateUser(user todo.User) (int, error)
-	GetUser(username, password string) (todo.User, error)
+	CreateUser(ctx context.Context, user todo.User) (int, error)
+	GetUser(ctx context.Context, username, password string) (todo.User, error)
 }
 
 type TodoList interface {
-	Create(userId int, list todo.TodoList) (int, error)
-	GetAll(userId int) ([]todo.TodoList, error)
-	GetById(userId, listId int) (todo.TodoList, error)
-	Delete(userId, listId int) error
-	Update(userId, listId int, input todo.UpdateListInput) error
+	Create(ctx context.Context, userId int, list todo.TodoList) (int, error)
+	GetAll(ctx context.Context, userId int) ([]todo.TodoList, error)
+	GetById(ctx context.Context, userId, listId int) (todo.TodoList, error)
+	Delete(ctx context.Context, userId, listId int) error
+	Update(ctx context.Context, userId, listId int, input todo.UpdateListInput) error
 }
 
 type TodoItem interface {
-	Create(list int, item todo.TodoItem) (int, error)
-	GetAll(userId, listId int) ([]todo.TodoItem, error)
-	GetById(userId, itemId int) (todo.TodoItem, error)
-	Delete(userId, itemId int) error
-	Update(userId, itemId int, input todo.UpdateItemInput) error
+	Create(ctx context.Context, listId int, item todo.TodoItem) (int, error)
+	GetAll(ctx context.Context, userId, listId int) ([]todo.TodoItem, error)
+	GetById(ctx context.Context, userId, itemId int) (todo.TodoItem, error)
+	Delete(ctx context.Context, userId, itemId int) error
+	Update(ctx context.Context, userId, itemId int, input todo.UpdateItemInput) error
 }
 
 type Repository struct {
