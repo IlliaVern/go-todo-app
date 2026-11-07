@@ -22,7 +22,6 @@ FROM gcr.io/distroless/static-debian13:nonroot
 WORKDIR /app
 
 COPY --from=build /out/todo-app /app/todo-app
-COPY configs /app/configs
 
 ENV GIN_MODE=release
 EXPOSE 8000

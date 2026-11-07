@@ -53,7 +53,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	db, err := postgres.Open(ctx, cfg.DB)
+	db, err := postgres.Open(ctx, cfg.DB.Postgres())
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}

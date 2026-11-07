@@ -21,8 +21,8 @@ infra: ## Start only PostgreSQL and apply migrations, for `make run`
 logs: ## Follow Docker stack logs
 	$(COMPOSE) logs --follow
 
-run: ## Run the API on the host (needs `make infra` and a .env file)
-	go run ./cmd/api
+run: ## Run the API on the host with .env exported (needs `make infra`)
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; go run ./cmd/api
 
 build: ## Build the API binary into bin/
 	go build -trimpath -o bin/todo-app ./cmd/api
