@@ -8,7 +8,7 @@ import (
 
 	"github.com/IlliaVern/go-todo-app"
 	"github.com/IlliaVern/go-todo-app/pkg/repository"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 )
 
 type tokenClaims struct {
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 	UserId int `json:"user_id"`
 }
 
@@ -42,12 +42,13 @@ func (s *AuthService) GenerateToken(username, password string) (string, error) {
 		return "", err
 	}
 
+	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &tokenClaims{
-		jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(tokenTTL).Unix(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
-		user.Id,
+		UserId: user.Id,
 	})
 
 	return token.SignedString([]byte(signingKey))
@@ -55,12 +56,8 @@ func (s *AuthService) GenerateToken(username, password string) (string, error) {
 
 func (s *AuthService) ParseToken(accessToken string) (int, error) {
 	token, err := jwt.ParseWithClaims(accessToken, &tokenClaims{}, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("invalid signing method")
-		}
-
 		return []byte(signingKey), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return 0, err
 	}
