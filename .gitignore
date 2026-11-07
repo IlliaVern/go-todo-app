@@ -4,3 +4,6 @@
 /logs/!*
 /logs/error.log
 /bin/
+
+# Claude Code: personal, machine-local settings
+.claude/settings.local.json
