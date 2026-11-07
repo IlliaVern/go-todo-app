@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,19 +14,18 @@ import (
 	"github.com/IlliaVern/go-todo-app/pkg/repository"
 	"github.com/IlliaVern/go-todo-app/pkg/service"
 	"github.com/joho/godotenv"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 func main() {
-	logrus.SetFormatter(new(logrus.JSONFormatter))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	if err := initConfig(); err != nil {
-		logrus.Fatalf("Error initializing configs: %s\n", err.Error())
+		fatal("failed to initialize config", err)
 	}
 
 	if err := godotenv.Load(); err != nil {
-		logrus.Fatalf("Error loading env variables: %s\n", err.Error())
+		fatal("failed to load env variables", err)
 	}
 
 	db, err := repository.NewPostgresDB(repository.Config{
@@ -37,7 +37,7 @@ func main() {
 		Password: os.Getenv("DB_PASSWORD"),
 	})
 	if err != nil {
-		logrus.Fatalf("Failed to initiate db: %s\n", err.Error())
+		fatal("failed to connect to database", err)
 	}
 
 	repos := repository.NewRepository(db)
@@ -47,23 +47,23 @@ func main() {
 	srv := new(todo.Server)
 	go func() {
 		if err := srv.Run(viper.GetString("port"), handlers.InitRoutes()); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logrus.Fatalf("Error ocurred while running http server: %s\n", err.Error())
+			fatal("http server failed", err)
 		}
 	}()
 
-	logrus.Print("TodoApp Started...")
+	slog.Info("todo app started", "port", viper.GetString("port"))
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	<-quit
 
-	logrus.Print("TodoApp Shutting Down...")
+	slog.Info("todo app shutting down")
 
 	if err := srv.Shutdown(context.Background()); err != nil {
-		logrus.Errorf("error ocurred on server shutting down: %s", err.Error())
+		slog.Error("http server shutdown failed", "error", err)
 	}
 	if err := db.Close(); err != nil {
-		logrus.Errorf("error ocurred on closing db connection: %s", err.Error())
+		slog.Error("closing database connection failed", "error", err)
 	}
 }
 
@@ -71,4 +71,9 @@ func initConfig() error {
 	viper.AddConfigPath("configs")
 	viper.SetConfigName("config")
 	return viper.ReadInConfig()
+}
+
+func fatal(msg string, err error) {
+	slog.Error(msg, "error", err)
+	os.Exit(1)
 }

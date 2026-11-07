@@ -1,8 +1,9 @@
 package handler
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 )
 
 type errorResponse struct {
@@ -14,6 +15,6 @@ type statusResponse struct {
 }
 
 func newErrorResponse(ctx *gin.Context, statusCode int, message string) {
-	logrus.Error(message)
+	slog.Error("request failed", "status", statusCode, "method", ctx.Request.Method, "path", ctx.FullPath(), "error", message)
 	ctx.AbortWithStatusJSON(statusCode, errorResponse{message})
 }

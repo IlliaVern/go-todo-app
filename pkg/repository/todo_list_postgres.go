@@ -2,11 +2,11 @@ package repository
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/IlliaVern/go-todo-app"
 	"github.com/jmoiron/sqlx"
-	"github.com/sirupsen/logrus"
 )
 
 type TodoListPostgres struct {
@@ -98,8 +98,7 @@ func (r *TodoListPostgres) Update(userId, listId int, input todo.UpdateListInput
 		todoListsTable, setQuery, usersListsTable, argId, argId+1)
 	args = append(args, listId, userId)
 
-	logrus.Debugf("Updated query: %s", query)
-	logrus.Debugf("Args: %s", args)
+	slog.Debug("update todo list", "query", query, "args", args)
 
 	_, err := r.db.Exec(query, args...)
 	return err

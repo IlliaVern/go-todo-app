@@ -8,7 +8,6 @@ require (
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/joho/godotenv v1.4.0
-	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.10.1
 )
 
