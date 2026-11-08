@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/IlliaVern/go-todo-app/internal/platform/retry"
 	"github.com/IlliaVern/go-todo-app/internal/todo/app"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
 )
@@ -250,13 +251,13 @@ func TestUpdatesRetryAfterConcurrentModification(t *testing.T) {
 	listID, _ := svc.CreateList(ctx, alice, "L", "")
 	itemID, _ := svc.AddItem(ctx, alice, listID, "I", "")
 
-	store.conflicts = app.MaxUpdateAttempts - 1
+	store.conflicts = retry.MaxAttempts - 1
 	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); err != nil {
-		t.Fatalf("UpdateList after %d conflicts: %v", app.MaxUpdateAttempts-1, err)
+		t.Fatalf("UpdateList after %d conflicts: %v", retry.MaxAttempts-1, err)
 	}
-	store.conflicts = app.MaxUpdateAttempts - 1
+	store.conflicts = retry.MaxAttempts - 1
 	if err := svc.UpdateItem(ctx, alice, itemID, domain.ItemPatch{Done: ptr(true)}); err != nil {
-		t.Fatalf("UpdateItem after %d conflicts: %v", app.MaxUpdateAttempts-1, err)
+		t.Fatalf("UpdateItem after %d conflicts: %v", retry.MaxAttempts-1, err)
 	}
 
 	list, _ := svc.List(ctx, alice, listID)
@@ -271,7 +272,7 @@ func TestUpdatesGiveUpAfterMaxAttempts(t *testing.T) {
 	svc, store := newServiceWithStore()
 	listID, _ := svc.CreateList(ctx, alice, "L", "")
 
-	store.conflicts = app.MaxUpdateAttempts
+	store.conflicts = retry.MaxAttempts
 	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); !errors.Is(err, domain.ErrConcurrentUpdate) {
 		t.Errorf("err = %v, want %v", err, domain.ErrConcurrentUpdate)
 	}

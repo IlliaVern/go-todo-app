@@ -164,7 +164,7 @@ internal/
     app/              use cases scoped to the calling owner, with optimistic-locking retries
     postgres/         repository adapters
     httpapi/          handlers and DTOs
-  platform/           config, health, httpserver, httpx (HTTP helpers, logging, rate limiting), logging, postgres
+  platform/           config, health, httpserver, httpx (HTTP helpers, logging, rate limiting), logging, postgres, retry
   e2e/                end-to-end HTTP tests
 schema/               SQL schema (golang-migrate format)
 docker/               Dockerfile and Compose stack

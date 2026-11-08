@@ -4,10 +4,8 @@ package app
 
 import (
 	"context"
-	"errors"
-	"math/rand/v2"
-	"time"
 
+	"github.com/IlliaVern/go-todo-app/internal/platform/retry"
 	"github.com/IlliaVern/go-todo-app/internal/todo/domain"
 )
 
@@ -37,7 +35,7 @@ func (s *Service) List(ctx context.Context, owner domain.OwnerID, id domain.List
 }
 
 func (s *Service) UpdateList(ctx context.Context, owner domain.OwnerID, id domain.ListID, patch domain.ListPatch) error {
-	return retryOnConflict(ctx, func() error {
+	return retry.OnConflict(ctx, domain.ErrConcurrentUpdate, func() error {
 		list, err := s.lists.Get(ctx, owner, id)
 		if err != nil {
 			return err
@@ -76,7 +74,7 @@ func (s *Service) Item(ctx context.Context, owner domain.OwnerID, id domain.Item
 }
 
 func (s *Service) UpdateItem(ctx context.Context, owner domain.OwnerID, id domain.ItemID, patch domain.ItemPatch) error {
-	return retryOnConflict(ctx, func() error {
+	return retry.OnConflict(ctx, domain.ErrConcurrentUpdate, func() error {
 		item, err := s.items.Get(ctx, owner, id)
 		if err != nil {
 			return err
@@ -91,34 +89,4 @@ func (s *Service) UpdateItem(ctx context.Context, owner domain.OwnerID, id domai
 
 func (s *Service) DeleteItem(ctx context.Context, owner domain.OwnerID, id domain.ItemID) error {
 	return s.items.Delete(ctx, owner, id)
-}
-
-// MaxUpdateAttempts bounds how often an update is re-applied to a freshly
-// loaded aggregate after losing an optimistic concurrency race. Contention
-// beyond that surfaces as ErrConcurrentUpdate.
-const MaxUpdateAttempts = 5
-
-// retryBaseDelay is the first backoff step; each retry doubles it, with jitter.
-const retryBaseDelay = 2 * time.Millisecond
-
-// retryOnConflict runs a load-apply-save cycle again when the save reports
-// ErrConcurrentUpdate, so concurrent patches to different fields all land.
-// Randomised exponential backoff spreads competing writers apart.
-func retryOnConflict(ctx context.Context, update func() error) error {
-	var err error
-	for attempt := range MaxUpdateAttempts {
-		if attempt > 0 {
-			step := retryBaseDelay << (attempt - 1)
-			wait := step + rand.N(step) //nolint:gosec // jitter, not a secret
-			select {
-			case <-time.After(wait):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		if err = update(); !errors.Is(err, domain.ErrConcurrentUpdate) {
-			return err
-		}
-	}
-	return err
 }

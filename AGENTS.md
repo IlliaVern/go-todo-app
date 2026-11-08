@@ -9,14 +9,14 @@ cmd/api              entry point: config, logger, DB pool, server lifecycle, `he
 internal/api         composition root: wires repositories, services, adapters and middleware
 internal/identity    bounded context: users, sign-up/sign-in, access tokens
 internal/todo        bounded context: lists and their items
-internal/platform    shared infrastructure: config, health, httpserver, httpx, logging, postgres (+ pgtest)
+internal/platform    shared infrastructure: config, health, httpserver, httpx, logging, postgres (+ pgtest), retry
 internal/e2e         end-to-end HTTP tests
 ```
 
 Each bounded context has the same packages, and dependencies point inward only:
 
 - `domain`: aggregates with unexported state, typed ids (`OwnerID`, `ListID`, `ItemID`), value objects (`Title`, `Description`, `Name`, `Username`) with validating constructors, `Apply(patch)` methods, domain errors and repository ports. Imports nothing from the project. Aggregate constructors take value objects; use cases parse raw input first (`domain.ParseText`, `domain.NewUsername`).
-- `app`: use cases. Depends on `domain` plus ports it declares itself (`PasswordHasher`, `TokenManager`).
+- `app`: use cases. Depends on `domain`, ports it declares itself (`PasswordHasher`, `TokenManager`) and `platform/retry`.
 - `postgres`: repository adapters on `*pgxpool.Pool`. Private row structs map to domain types through `Restore*`, which trusts stored values.
 - `httpapi`: `net/http` handlers, request/response DTOs and the mapping from domain errors to status codes.
 - Identity-only adapters: `password` (argon2id) and `token` (JWT). They may import `identity/app` for its errors.
@@ -33,7 +33,7 @@ Rules:
 ## Invariants
 
 - **Ownership isolation**: a list belongs to `todo_lists.user_id`, an item to `todo_items.list_id`. Every todo repository query, inserts included, filters by the owner's user id, joining or selecting from `todo_lists` for items. Another owner's data is reported as not found, never as forbidden.
-- **Optimistic concurrency**: lists and items carry `version`. Repository `Update` matches the loaded version, increments it and returns the saved aggregate, or `ErrConcurrentUpdate` on a mismatch. Update use cases wrap load-apply-save in `retryOnConflict` (5 attempts, jittered backoff); persistent contention is a 409. Any new update path does the same. It protects concurrent server-side patches, not clients editing stale copies (no ETag/If-Match).
+- **Optimistic concurrency**: lists and items carry `version`. Repository `Update` matches the loaded version, increments it and returns the saved aggregate, or `ErrConcurrentUpdate` on a mismatch. Update use cases wrap load-apply-save in `retry.OnConflict` (5 attempts, jittered backoff); persistent contention is a 409. Any new update path does the same. It protects concurrent server-side patches, not clients editing stale copies (no ETag/If-Match).
 - Schema lives in `schema/000001_init.*.sql` (golang-migrate format). Until a production database exists, change it in place; Compose and `pgtest` both apply it from scratch. CHECK constraints mirror the domain invariants that `Restore*` trusts: change both together.
 - Usernames are stored lowercased (`NewUsername`), so the plain UNIQUE constraint is case-insensitive in effect.
 - Configuration comes only from environment variables, parsed by `internal/platform/config` (struct tags carry names and defaults). Document new variables in `.env.example` and the README configuration table.
