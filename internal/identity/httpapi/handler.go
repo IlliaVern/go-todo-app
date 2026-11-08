@@ -34,25 +34,17 @@ type signUpRequest struct {
 }
 
 func (h *Handler) signUp(w http.ResponseWriter, r *http.Request) {
-	var req signUpRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	req, ok := httpx.DecodeJSON[signUpRequest](w, r)
+	if !ok {
 		return
 	}
 
-	id, err := h.svc.SignUp(r.Context(), req.Name, req.Username, req.Password)
-	var invalid *domain.ValidationError
-	switch {
-	case errors.As(err, &invalid):
-		httpx.Error(w, r, http.StatusBadRequest, err.Error())
-	case errors.Is(err, domain.ErrUsernameTaken):
-		httpx.Error(w, r, http.StatusConflict, err.Error())
-	case errors.Is(err, app.ErrHasherBusy):
-		busy(w, r)
-	case err != nil:
-		httpx.InternalError(w, r, err)
-	default:
-		httpx.JSON(w, r, http.StatusCreated, httpx.IDResponse{ID: id})
+	id, err := h.svc.SignUp(r.Context(), app.SignUpInput{Name: req.Name, Username: req.Username, Password: req.Password})
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
+	httpx.JSON(w, r, http.StatusCreated, httpx.IDResponse{ID: int64(id)})
 }
 
 type signInRequest struct {
@@ -65,27 +57,35 @@ type signInResponse struct {
 }
 
 func (h *Handler) signIn(w http.ResponseWriter, r *http.Request) {
-	var req signInRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	req, ok := httpx.DecodeJSON[signInRequest](w, r)
+	if !ok {
 		return
 	}
 
-	token, err := h.svc.SignIn(r.Context(), req.Username, req.Password)
-	switch {
-	case errors.Is(err, app.ErrInvalidCredentials):
-		httpx.Error(w, r, http.StatusUnauthorized, err.Error())
-	case errors.Is(err, app.ErrHasherBusy):
-		busy(w, r)
-	case err != nil:
-		httpx.InternalError(w, r, err)
-	default:
-		httpx.JSON(w, r, http.StatusOK, signInResponse{Token: token})
+	token, err := h.svc.SignIn(r.Context(), app.SignInInput{Username: req.Username, Password: req.Password})
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
+	httpx.JSON(w, r, http.StatusOK, signInResponse{Token: string(token)})
 }
 
-func busy(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Retry-After", "2")
-	httpx.Error(w, r, http.StatusServiceUnavailable, app.ErrHasherBusy.Error())
+// writeError maps identity errors to HTTP statuses and client-facing messages.
+func writeError(w http.ResponseWriter, r *http.Request, err error) {
+	var invalid *domain.ValidationError
+	switch {
+	case errors.As(err, &invalid):
+		httpx.Error(w, r, http.StatusBadRequest, err.Error())
+	case errors.Is(err, app.ErrInvalidCredentials):
+		httpx.Error(w, r, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, domain.ErrUsernameTaken):
+		httpx.Error(w, r, http.StatusConflict, err.Error())
+	case errors.Is(err, app.ErrHasherBusy):
+		w.Header().Set("Retry-After", "2")
+		httpx.Error(w, r, http.StatusServiceUnavailable, app.ErrHasherBusy.Error())
+	default:
+		httpx.InternalError(w, r, err)
+	}
 }
 
 // Authenticate is middleware requiring "Authorization: Bearer <token>". It
@@ -104,7 +104,7 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		userID, err := h.svc.Authenticate(r.Context(), token)
+		userID, err := h.svc.Authenticate(r.Context(), domain.AccessToken(token))
 		if errors.Is(err, app.ErrInvalidToken) {
 			httpx.ErrorWithReason(w, r, http.StatusUnauthorized, app.ErrInvalidToken.Error(), err.Error())
 			return
@@ -114,6 +114,6 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(httpx.WithCallerID(r.Context(), userID)))
+		next.ServeHTTP(w, r.WithContext(httpx.WithCallerID(r.Context(), int64(userID))))
 	})
 }

@@ -5,7 +5,6 @@
 package e2e_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,22 +57,16 @@ type response struct {
 	body   []byte
 }
 
-func (c client) do(method, path string, body any) response {
+// do sends a request without a body.
+func (c client) do(method, path string) response {
 	c.t.Helper()
-	var reader io.Reader
-	switch b := body.(type) {
-	case nil:
-	case string: // raw, possibly malformed, JSON
-		reader = strings.NewReader(b)
-	default:
-		data, err := json.Marshal(b)
-		if err != nil {
-			c.t.Fatal(err)
-		}
-		reader = bytes.NewReader(data)
-	}
+	return c.raw(method, path, "")
+}
 
-	req, err := http.NewRequestWithContext(c.t.Context(), method, c.base+path, reader)
+// raw sends body as is, so tests can send malformed JSON.
+func (c client) raw(method, path, body string) response {
+	c.t.Helper()
+	req, err := http.NewRequestWithContext(c.t.Context(), method, c.base+path, strings.NewReader(body))
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -99,18 +92,35 @@ func (c client) do(method, path string, body any) response {
 	return response{status: resp.StatusCode, header: resp.Header, body: data}
 }
 
-// expect asserts the status and decodes the JSON body into out (if non-nil).
-func (c client) expect(r response, status int, out any) {
+// send marshals body to JSON and sends it.
+func send[T any](c client, method, path string, body T) response {
+	c.t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	return c.raw(method, path, string(data))
+}
+
+func (c client) expect(r response, status int) {
 	c.t.Helper()
 	if r.status != status {
 		c.t.Fatalf("status = %d, want %d; body: %s", r.status, status, r.body)
 	}
-	if out != nil {
-		if err := json.Unmarshal(r.body, out); err != nil {
-			c.t.Fatalf("decode %s: %v", r.body, err)
-		}
-	}
 }
+
+// decode asserts the status and returns the JSON body as a T.
+func decode[T any](c client, r response, status int) T {
+	c.t.Helper()
+	c.expect(r, status)
+	var out T
+	if err := json.Unmarshal(r.body, &out); err != nil {
+		c.t.Fatalf("decode %s: %v", r.body, err)
+	}
+	return out
+}
+
+func ptr[T any](v T) *T { return &v }
 
 var userSeq atomic.Int64
 
@@ -119,17 +129,25 @@ func signUp(t *testing.T, base string) client {
 	t.Helper()
 	username := fmt.Sprintf("user-%d-%d", time.Now().UnixNano(), userSeq.Add(1))
 	anon := client{t: t, base: base}
-	anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "Test", "username": username, "password": "s3cret"}), http.StatusCreated, nil)
-
-	var signIn struct{ Token string }
-	anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": username, "password": "s3cret"}), http.StatusOK, &signIn)
-	if signIn.Token == "" {
-		t.Fatal("empty token")
-	}
-	return client{t: t, base: base, token: signIn.Token}
+	anon.expect(send(anon, "POST", "/auth/sign-up", map[string]string{"name": "Test", "username": username, "password": "s3cret"}), http.StatusCreated)
+	return signIn(t, base, username, "s3cret")
 }
 
+func signIn(t *testing.T, base, username, password string) client {
+	t.Helper()
+	anon := client{t: t, base: base}
+	body := decode[tokenBody](anon, send(anon, "POST", "/auth/sign-in", map[string]string{"username": username, "password": password}), http.StatusOK)
+	if body.Token == "" {
+		t.Fatal("empty token")
+	}
+	return client{t: t, base: base, token: body.Token}
+}
+
+type tokenBody struct{ Token string }
+
 type idBody struct{ ID int64 }
+
+type statusBody struct{ Status string }
 
 type listBody struct {
 	ID          int64
@@ -144,19 +162,28 @@ type itemBody struct {
 	Done        bool
 }
 
+type listsBody struct{ Data []listBody }
+
+type itemsBody struct{ Data []itemBody }
+
 type messageBody struct{ Message string }
+
+type itemPatch struct {
+	Title       *string `json:"title,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Done        *bool   `json:"done,omitempty"`
+}
 
 func TestAPI(t *testing.T) {
 	base := startAPI(t)
 
 	t.Run("probes", func(t *testing.T) {
 		anon := client{t: t, base: base}
-		anon.expect(anon.do("GET", "/healthz", nil), http.StatusOK, nil)
-		if id := anon.do("GET", "/healthz", nil).header.Get("X-Request-ID"); id == "" {
+		anon.expect(anon.do("GET", "/healthz"), http.StatusOK)
+		if id := anon.do("GET", "/healthz").header.Get("X-Request-ID"); id == "" {
 			t.Error("probe response has no X-Request-ID")
 		}
-		var ready struct{ Status string }
-		anon.expect(anon.do("GET", "/readyz", nil), http.StatusOK, &ready)
+		ready := decode[statusBody](anon, anon.do("GET", "/readyz"), http.StatusOK)
 		if ready.Status != "ready" {
 			t.Errorf("readyz status = %q", ready.Status)
 		}
@@ -167,29 +194,26 @@ func TestAPI(t *testing.T) {
 		username := fmt.Sprintf("auth-%d", time.Now().UnixNano())
 		creds := map[string]string{"name": "Ada", "username": username, "password": "s3cret"}
 
-		var created idBody
-		anon.expect(anon.do("POST", "/auth/sign-up", creds), http.StatusCreated, &created)
+		created := decode[idBody](anon, send(anon, "POST", "/auth/sign-up", creds), http.StatusCreated)
 		if created.ID <= 0 {
 			t.Fatalf("id = %d", created.ID)
 		}
 
-		var msg messageBody
-		anon.expect(anon.do("POST", "/auth/sign-up", creds), http.StatusConflict, &msg)
+		msg := decode[messageBody](anon, send(anon, "POST", "/auth/sign-up", creds), http.StatusConflict)
 		if msg.Message != "username is already taken" {
 			t.Errorf("duplicate message = %q", msg.Message)
 		}
 
-		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": ""}), http.StatusBadRequest, nil)
-		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": strings.Repeat("p", 1025)}), http.StatusBadRequest, nil)
-		anon.expect(anon.do("POST", "/auth/sign-up", `{"name":`), http.StatusBadRequest, nil)
-		anon.expect(anon.do("POST", "/auth/sign-up", map[string]string{"name": "B\x00", "username": username + "-c", "password": "x"}), http.StatusBadRequest, nil)
-		anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": "a\x00b", "password": "x"}), http.StatusUnauthorized, nil)
+		anon.expect(send(anon, "POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": ""}), http.StatusBadRequest)
+		anon.expect(send(anon, "POST", "/auth/sign-up", map[string]string{"name": "B", "username": username + "-b", "password": strings.Repeat("p", 1025)}), http.StatusBadRequest)
+		anon.expect(anon.raw("POST", "/auth/sign-up", `{"name":`), http.StatusBadRequest)
+		anon.expect(send(anon, "POST", "/auth/sign-up", map[string]string{"name": "B\x00", "username": username + "-c", "password": "x"}), http.StatusBadRequest)
+		anon.expect(send(anon, "POST", "/auth/sign-in", map[string]string{"username": "a\x00b", "password": "x"}), http.StatusUnauthorized)
 
-		anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": username, "password": "wrong"}), http.StatusUnauthorized, &msg)
-		wrongPassword := msg.Message
-		anon.expect(anon.do("POST", "/auth/sign-in", map[string]string{"username": username + "-nobody", "password": "wrong"}), http.StatusUnauthorized, &msg)
-		if msg.Message != wrongPassword {
-			t.Errorf("unknown user and wrong password must look identical: %q vs %q", msg.Message, wrongPassword)
+		wrongPassword := decode[messageBody](anon, send(anon, "POST", "/auth/sign-in", map[string]string{"username": username, "password": "wrong"}), http.StatusUnauthorized)
+		unknownUser := decode[messageBody](anon, send(anon, "POST", "/auth/sign-in", map[string]string{"username": username + "-nobody", "password": "wrong"}), http.StatusUnauthorized)
+		if unknownUser.Message != wrongPassword.Message {
+			t.Errorf("unknown user and wrong password must look identical: %q vs %q", unknownUser.Message, wrongPassword.Message)
 		}
 	})
 
@@ -220,8 +244,7 @@ func TestAPI(t *testing.T) {
 			})
 		}
 
-		var msg messageBody
-		user.expect(user.do("GET", "/auth/api/lists/", nil), http.StatusNotFound, &msg)
+		msg := decode[messageBody](user, user.do("GET", "/auth/api/lists/"), http.StatusNotFound)
 		if msg.Message != "route not found" {
 			t.Errorf("unknown route message = %q, want JSON error", msg.Message)
 		}
@@ -239,110 +262,98 @@ func TestAPI(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ghost := client{t: t, base: base, token: tok}
-		ghost.expect(ghost.do("POST", "/api/lists/", map[string]string{"title": "x"}), http.StatusUnauthorized, nil)
-		ghost.expect(ghost.do("GET", "/api/lists/", nil), http.StatusUnauthorized, nil)
-		ghost.expect(ghost.do("GET", "/api/items/1", nil), http.StatusUnauthorized, nil)
+		ghost := client{t: t, base: base, token: string(tok)}
+		ghost.expect(send(ghost, "POST", "/api/lists/", map[string]string{"title": "x"}), http.StatusUnauthorized)
+		ghost.expect(ghost.do("GET", "/api/lists/"), http.StatusUnauthorized)
+		ghost.expect(ghost.do("GET", "/api/items/1"), http.StatusUnauthorized)
 	})
 
 	t.Run("lists and items", func(t *testing.T) {
 		user := signUp(t, base)
 
-		var lists struct{ Data []listBody }
 		for _, path := range []string{"/api/lists/", "/api/lists"} {
-			if r := user.do("GET", path, nil); r.status != http.StatusOK {
+			if r := user.do("GET", path); r.status != http.StatusOK {
 				t.Errorf("GET %s = %d, want 200 with or without trailing slash", path, r.status)
 			}
 		}
-		if r := user.do("GET", "/api/lists/", nil); strings.TrimSpace(string(r.body)) != `{"data":[]}` {
+		if r := user.do("GET", "/api/lists/"); strings.TrimSpace(string(r.body)) != `{"data":[]}` {
 			t.Errorf("empty lists body = %s, want {\"data\":[]}", r.body)
 		}
 
-		var list idBody
-		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "Groceries", "description": "weekly"}), http.StatusCreated, &list)
-		user.expect(user.do("GET", "/api/lists/", nil), http.StatusOK, &lists)
+		list := decode[idBody](user, send(user, "POST", "/api/lists/", map[string]string{"title": "Groceries", "description": "weekly"}), http.StatusCreated)
+		lists := decode[listsBody](user, user.do("GET", "/api/lists/"), http.StatusOK)
 		if len(lists.Data) != 1 || lists.Data[0] != (listBody{ID: list.ID, Title: "Groceries", Description: "weekly"}) {
 			t.Errorf("lists = %+v", lists.Data)
 		}
 
 		listPath := fmt.Sprintf("/api/lists/%d", list.ID)
-		user.expect(user.do("PATCH", listPath, map[string]string{"title": "Food"}), http.StatusOK, nil)
-		var got listBody
-		user.expect(user.do("GET", listPath, nil), http.StatusOK, &got)
+		user.expect(send(user, "PATCH", listPath, map[string]string{"title": "Food"}), http.StatusOK)
+		got := decode[listBody](user, user.do("GET", listPath), http.StatusOK)
 		if got != (listBody{ID: list.ID, Title: "Food", Description: "weekly"}) {
 			t.Errorf("updated list = %+v", got)
 		}
 
-		var msg messageBody
-		user.expect(user.do("PATCH", listPath, map[string]any{}), http.StatusBadRequest, &msg)
+		msg := decode[messageBody](user, user.raw("PATCH", listPath, `{}`), http.StatusBadRequest)
 		if msg.Message != "update structure has no values" {
 			t.Errorf("empty update message = %q", msg.Message)
 		}
-		user.expect(user.do("PATCH", listPath, map[string]string{"title": " "}), http.StatusBadRequest, nil)
-		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": ""}), http.StatusBadRequest, nil)
-		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "a\x00b"}), http.StatusBadRequest, nil)
-		user.expect(user.do("GET", "/api/lists/abc", nil), http.StatusBadRequest, nil)
-		user.expect(user.do("GET", "/api/lists/999999999", nil), http.StatusNotFound, nil)
+		user.expect(send(user, "PATCH", listPath, map[string]string{"title": " "}), http.StatusBadRequest)
+		user.expect(send(user, "POST", "/api/lists/", map[string]string{"title": ""}), http.StatusBadRequest)
+		user.expect(send(user, "POST", "/api/lists/", map[string]string{"title": "a\x00b"}), http.StatusBadRequest)
+		user.expect(user.do("GET", "/api/lists/abc"), http.StatusBadRequest)
+		user.expect(user.do("GET", "/api/lists/999999999"), http.StatusNotFound)
 
 		itemsPath := listPath + "/items/"
-		if r := user.do("GET", itemsPath, nil); r.status != http.StatusOK || strings.TrimSpace(string(r.body)) != `{"data":[]}` {
+		if r := user.do("GET", itemsPath); r.status != http.StatusOK || strings.TrimSpace(string(r.body)) != `{"data":[]}` {
 			t.Errorf("empty items = %d %s, want 200 {\"data\":[]}", r.status, r.body)
 		}
 
-		var item idBody
-		user.expect(user.do("POST", itemsPath, map[string]string{"title": "Milk"}), http.StatusCreated, &item)
+		item := decode[idBody](user, send(user, "POST", itemsPath, map[string]string{"title": "Milk"}), http.StatusCreated)
 		itemPath := fmt.Sprintf("/api/items/%d", item.ID)
 
-		user.expect(user.do("PATCH", itemPath, map[string]any{"done": true, "title": "Oat milk"}), http.StatusOK, nil)
-		var gotItem itemBody
-		user.expect(user.do("GET", itemPath, nil), http.StatusOK, &gotItem)
+		user.expect(send(user, "PATCH", itemPath, itemPatch{Done: ptr(true), Title: ptr("Oat milk")}), http.StatusOK)
+		gotItem := decode[itemBody](user, user.do("GET", itemPath), http.StatusOK)
 		if gotItem != (itemBody{ID: item.ID, Title: "Oat milk", Done: true}) {
 			t.Errorf("updated item = %+v", gotItem)
 		}
-		var items struct{ Data []itemBody }
-		user.expect(user.do("GET", itemsPath, nil), http.StatusOK, &items)
+		items := decode[itemsBody](user, user.do("GET", itemsPath), http.StatusOK)
 		if len(items.Data) != 1 || items.Data[0] != gotItem {
 			t.Errorf("items = %+v", items)
 		}
-		user.expect(user.do("PATCH", itemPath, map[string]any{}), http.StatusBadRequest, nil)
-		user.expect(user.do("PATCH", itemPath+"/", map[string]any{"done": false}), http.StatusOK, nil)
-		user.expect(user.do("PATCH", itemPath, map[string]any{"done": true, "colour": "red"}), http.StatusBadRequest, nil)
-		user.expect(user.do("PATCH", itemPath, `{"done":true} {"done":false}`), http.StatusBadRequest, nil)
-		var notAllowed messageBody
-		r := user.do("PUT", itemPath, map[string]any{"done": true})
-		user.expect(r, http.StatusMethodNotAllowed, &notAllowed)
+		user.expect(user.raw("PATCH", itemPath, `{}`), http.StatusBadRequest)
+		user.expect(send(user, "PATCH", itemPath+"/", itemPatch{Done: ptr(false)}), http.StatusOK)
+		user.expect(user.raw("PATCH", itemPath, `{"done":true,"colour":"red"}`), http.StatusBadRequest)
+		user.expect(user.raw("PATCH", itemPath, `{"done":true} {"done":false}`), http.StatusBadRequest)
+		notAllowed := decode[messageBody](user, send(user, "PUT", itemPath, itemPatch{Done: ptr(true)}), http.StatusMethodNotAllowed)
 		if notAllowed.Message != "method not allowed" {
 			t.Errorf("405 message = %q", notAllowed.Message)
 		}
 
-		user.expect(user.do("DELETE", itemPath, nil), http.StatusOK, nil)
-		user.expect(user.do("GET", itemPath, nil), http.StatusNotFound, nil)
-		user.expect(user.do("DELETE", itemPath, nil), http.StatusNotFound, nil)
+		user.expect(user.do("DELETE", itemPath), http.StatusOK)
+		user.expect(user.do("GET", itemPath), http.StatusNotFound)
+		user.expect(user.do("DELETE", itemPath), http.StatusNotFound)
 
-		var second idBody
-		user.expect(user.do("POST", itemsPath, map[string]string{"title": "Bread"}), http.StatusCreated, &second)
-		user.expect(user.do("DELETE", listPath, nil), http.StatusOK, nil)
-		user.expect(user.do("GET", listPath, nil), http.StatusNotFound, nil)
-		user.expect(user.do("GET", fmt.Sprintf("/api/items/%d", second.ID), nil), http.StatusNotFound, nil)
-		user.expect(user.do("DELETE", listPath, nil), http.StatusNotFound, nil)
+		second := decode[idBody](user, send(user, "POST", itemsPath, map[string]string{"title": "Bread"}), http.StatusCreated)
+		user.expect(user.do("DELETE", listPath), http.StatusOK)
+		user.expect(user.do("GET", listPath), http.StatusNotFound)
+		user.expect(user.do("GET", fmt.Sprintf("/api/items/%d", second.ID)), http.StatusNotFound)
+		user.expect(user.do("DELETE", listPath), http.StatusNotFound)
 	})
 
 	t.Run("concurrent patches to different fields all apply", func(t *testing.T) {
 		user := signUp(t, base)
-		var list, item idBody
-		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusCreated, &list)
-		user.expect(user.do("POST", fmt.Sprintf("/api/lists/%d/items/", list.ID), map[string]string{"title": "old"}), http.StatusCreated, &item)
+		list := decode[idBody](user, send(user, "POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusCreated)
+		item := decode[idBody](user, send(user, "POST", fmt.Sprintf("/api/lists/%d/items/", list.ID), map[string]string{"title": "old"}), http.StatusCreated)
 		itemPath := fmt.Sprintf("/api/items/%d", item.ID)
 
-		patches := []map[string]any{{"title": "new"}, {"done": true}, {"description": "d"}}
+		patches := []itemPatch{{Title: ptr("new")}, {Done: ptr(true)}, {Description: ptr("d")}}
 		for _, status := range concurrently(user, "PATCH", itemPath, patches) {
 			if status != http.StatusOK {
 				t.Errorf("concurrent PATCH status = %d, want 200", status)
 			}
 		}
 
-		var got itemBody
-		user.expect(user.do("GET", itemPath, nil), http.StatusOK, &got)
+		got := decode[itemBody](user, user.do("GET", itemPath), http.StatusOK)
 		if got != (itemBody{ID: item.ID, Title: "new", Description: "d", Done: true}) {
 			t.Errorf("item after concurrent patches = %+v, want all three applied", got)
 		}
@@ -350,13 +361,12 @@ func TestAPI(t *testing.T) {
 
 	t.Run("heavy contention answers 200 or 409, never 500", func(t *testing.T) {
 		user := signUp(t, base)
-		var list idBody
-		user.expect(user.do("POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusCreated, &list)
+		list := decode[idBody](user, send(user, "POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusCreated)
 		listPath := fmt.Sprintf("/api/lists/%d", list.ID)
 
-		patches := make([]map[string]any, 20)
+		patches := make([]map[string]string, 20)
 		for i := range patches {
-			patches[i] = map[string]any{"title": fmt.Sprintf("t-%d", i)}
+			patches[i] = map[string]string{"title": fmt.Sprintf("t-%d", i)}
 		}
 		ok := 0
 		for _, status := range concurrently(user, "PATCH", listPath, patches) {
@@ -376,30 +386,26 @@ func TestAPI(t *testing.T) {
 	t.Run("users cannot touch each other's data", func(t *testing.T) {
 		alice, bob := signUp(t, base), signUp(t, base)
 
-		var list, item idBody
-		alice.expect(alice.do("POST", "/api/lists/", map[string]string{"title": "Alice's"}), http.StatusCreated, &list)
+		list := decode[idBody](alice, send(alice, "POST", "/api/lists/", map[string]string{"title": "Alice's"}), http.StatusCreated)
 		listPath := fmt.Sprintf("/api/lists/%d", list.ID)
-		alice.expect(alice.do("POST", listPath+"/items/", map[string]string{"title": "secret"}), http.StatusCreated, &item)
+		item := decode[idBody](alice, send(alice, "POST", listPath+"/items/", map[string]string{"title": "secret"}), http.StatusCreated)
 		itemPath := fmt.Sprintf("/api/items/%d", item.ID)
 
-		var bobLists struct{ Data []listBody }
-		bob.expect(bob.do("GET", "/api/lists/", nil), http.StatusOK, &bobLists)
+		bobLists := decode[listsBody](bob, bob.do("GET", "/api/lists/"), http.StatusOK)
 		if len(bobLists.Data) != 0 {
 			t.Errorf("bob sees lists %+v", bobLists.Data)
 		}
-		bob.expect(bob.do("GET", listPath, nil), http.StatusNotFound, nil)
-		bob.expect(bob.do("PATCH", listPath, map[string]string{"title": "hacked"}), http.StatusNotFound, nil)
-		bob.expect(bob.do("GET", listPath+"/items/", nil), http.StatusNotFound, nil)
-		bob.expect(bob.do("POST", listPath+"/items/", map[string]string{"title": "x"}), http.StatusNotFound, nil)
-		bob.expect(bob.do("GET", itemPath, nil), http.StatusNotFound, nil)
-		bob.expect(bob.do("PATCH", itemPath, map[string]any{"done": true}), http.StatusNotFound, nil)
-		bob.expect(bob.do("DELETE", itemPath, nil), http.StatusNotFound, nil)
-		bob.expect(bob.do("DELETE", listPath, nil), http.StatusNotFound, nil)
+		bob.expect(bob.do("GET", listPath), http.StatusNotFound)
+		bob.expect(send(bob, "PATCH", listPath, map[string]string{"title": "hacked"}), http.StatusNotFound)
+		bob.expect(bob.do("GET", listPath+"/items/"), http.StatusNotFound)
+		bob.expect(send(bob, "POST", listPath+"/items/", map[string]string{"title": "x"}), http.StatusNotFound)
+		bob.expect(bob.do("GET", itemPath), http.StatusNotFound)
+		bob.expect(send(bob, "PATCH", itemPath, itemPatch{Done: ptr(true)}), http.StatusNotFound)
+		bob.expect(bob.do("DELETE", itemPath), http.StatusNotFound)
+		bob.expect(bob.do("DELETE", listPath), http.StatusNotFound)
 
-		var gotList listBody
-		alice.expect(alice.do("GET", listPath, nil), http.StatusOK, &gotList)
-		var gotItem itemBody
-		alice.expect(alice.do("GET", itemPath, nil), http.StatusOK, &gotItem)
+		gotList := decode[listBody](alice, alice.do("GET", listPath), http.StatusOK)
+		gotItem := decode[itemBody](alice, alice.do("GET", itemPath), http.StatusOK)
 		if gotList.Title != "Alice's" || gotItem.Title != "secret" || gotItem.Done {
 			t.Errorf("alice's data changed: %+v %+v", gotList, gotItem)
 		}
@@ -407,11 +413,11 @@ func TestAPI(t *testing.T) {
 }
 
 // concurrently sends one request per body at the same time and returns the statuses.
-func concurrently(c client, method, path string, bodies []map[string]any) []int {
+func concurrently[T any](c client, method, path string, bodies []T) []int {
 	statuses := make([]int, len(bodies))
 	var wg sync.WaitGroup
 	for i, body := range bodies {
-		wg.Go(func() { statuses[i] = c.do(method, path, body).status })
+		wg.Go(func() { statuses[i] = send(c, method, path, body).status })
 	}
 	wg.Wait()
 	return statuses

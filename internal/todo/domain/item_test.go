@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewItem(t *testing.T) {
-	title, description, _ := domain.ParseText("Milk", "2 l")
+	title, description, _ := domain.ParseText(domain.TextInput{Title: "Milk", Description: "2 l"})
 	item := domain.NewItem(3, title, description)
 	if item.ListID() != 3 || item.Title() != title || item.Description() != description || item.Done() || item.ID() != 0 {
 		t.Errorf("got %+v", item)

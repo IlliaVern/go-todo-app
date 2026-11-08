@@ -53,7 +53,7 @@ func (i *Item) Apply(p ItemPatch) error {
 		done = *p.Done
 	}
 
-	t, d, err := ParseText(title, description)
+	t, d, err := ParseText(TextInput{Title: title, Description: description})
 	if err != nil {
 		return err
 	}

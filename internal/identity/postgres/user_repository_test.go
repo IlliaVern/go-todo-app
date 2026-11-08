@@ -10,13 +10,28 @@ import (
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres/pgtest"
 )
 
+func newUser(t *testing.T, username string) domain.User {
+	t.Helper()
+	name, err := domain.NewName("Ada Lovelace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	un, err := domain.NewUsername(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := domain.NewUser(name, un, "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return user
+}
+
 func TestUserRepository(t *testing.T) {
 	repo := postgres.NewUserRepository(pgtest.Start(t))
 	ctx := context.Background()
 
-	name, _ := domain.NewName("Ada Lovelace")
-	username, _ := domain.NewUsername("Ada")
-	user, _ := domain.NewUser(name, username, "hash")
+	user := newUser(t, "Ada")
 
 	id, err := repo.Add(ctx, user)
 	if err != nil || id <= 0 {
@@ -26,11 +41,11 @@ func TestUserRepository(t *testing.T) {
 		t.Errorf("duplicate Add: err = %v, want %v", err, domain.ErrUsernameTaken)
 	}
 
-	got, err := repo.ByUsername(ctx, username)
+	got, err := repo.ByUsername(ctx, user.Username())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID() != id || got.Name() != name || got.Username() != username || got.PasswordHash() != "hash" {
+	if got.ID() != id || got.Name() != user.Name() || got.Username() != user.Username() || got.PasswordHash() != "hash" {
 		t.Errorf("ByUsername = %+v", got)
 	}
 
@@ -40,7 +55,7 @@ func TestUserRepository(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		id   int64
+		id   domain.UserID
 		want bool
 	}{{id, true}, {id + 1000, false}} {
 		if exists, err := repo.Exists(ctx, tt.id); err != nil || exists != tt.want {

@@ -153,11 +153,13 @@ func newServiceWithStore() (*app.Service, *memStore) {
 
 func ptr[T any](v T) *T { return &v }
 
+func text(title string) domain.TextInput { return domain.TextInput{Title: title} }
+
 func TestListLifecycle(t *testing.T) {
 	ctx := context.Background()
 	svc := newService()
 
-	listID, err := svc.CreateList(ctx, alice, "Groceries", "")
+	listID, err := svc.CreateList(ctx, alice, text("Groceries"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +172,7 @@ func TestListLifecycle(t *testing.T) {
 		t.Fatalf("List = %+v, %v", list, err)
 	}
 
-	itemID, err := svc.AddItem(ctx, alice, listID, "Milk", "")
+	itemID, err := svc.AddItem(ctx, alice, listID, text("Milk"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,8 +195,8 @@ func TestListLifecycle(t *testing.T) {
 func TestOtherOwnersDataIsInvisible(t *testing.T) {
 	ctx := context.Background()
 	svc := newService()
-	listID, _ := svc.CreateList(ctx, alice, "Alice's", "")
-	itemID, _ := svc.AddItem(ctx, alice, listID, "secret", "")
+	listID, _ := svc.CreateList(ctx, alice, text("Alice's"))
+	itemID, _ := svc.AddItem(ctx, alice, listID, text("secret"))
 
 	checks := []struct {
 		name    string
@@ -204,7 +206,7 @@ func TestOtherOwnersDataIsInvisible(t *testing.T) {
 		{"get list", second(svc.List(ctx, bob, listID)), domain.ErrListNotFound},
 		{"update list", svc.UpdateList(ctx, bob, listID, domain.ListPatch{Title: ptr("x")}), domain.ErrListNotFound},
 		{"delete list", svc.DeleteList(ctx, bob, listID), domain.ErrListNotFound},
-		{"add item", second(svc.AddItem(ctx, bob, listID, "x", "")), domain.ErrListNotFound},
+		{"add item", second(svc.AddItem(ctx, bob, listID, text("x"))), domain.ErrListNotFound},
 		{"list items", second(svc.Items(ctx, bob, listID)), domain.ErrListNotFound},
 		{"get item", second(svc.Item(ctx, bob, itemID)), domain.ErrItemNotFound},
 		{"update item", svc.UpdateItem(ctx, bob, itemID, domain.ItemPatch{Done: ptr(true)}), domain.ErrItemNotFound},
@@ -230,14 +232,14 @@ func TestValidationHappensBeforePersistence(t *testing.T) {
 	ctx := context.Background()
 	svc := newService()
 
-	if _, err := svc.CreateList(ctx, alice, "", ""); !errors.Is(err, domain.ErrTitleRequired) {
+	if _, err := svc.CreateList(ctx, alice, text("")); !errors.Is(err, domain.ErrTitleRequired) {
 		t.Errorf("CreateList: err = %v, want %v", err, domain.ErrTitleRequired)
 	}
 	if lists, _ := svc.Lists(ctx, alice); len(lists) != 0 {
 		t.Errorf("invalid list was stored")
 	}
 
-	listID, _ := svc.CreateList(ctx, alice, "L", "")
+	listID, _ := svc.CreateList(ctx, alice, text("L"))
 	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{}); !errors.Is(err, domain.ErrEmptyUpdate) {
 		t.Errorf("UpdateList: err = %v, want %v", err, domain.ErrEmptyUpdate)
 	}
@@ -248,8 +250,8 @@ func second[T any](_ T, err error) error { return err }
 func TestUpdatesRetryAfterConcurrentModification(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newServiceWithStore()
-	listID, _ := svc.CreateList(ctx, alice, "L", "")
-	itemID, _ := svc.AddItem(ctx, alice, listID, "I", "")
+	listID, _ := svc.CreateList(ctx, alice, text("L"))
+	itemID, _ := svc.AddItem(ctx, alice, listID, text("I"))
 
 	store.conflicts = retry.MaxAttempts - 1
 	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); err != nil {
@@ -270,7 +272,7 @@ func TestUpdatesRetryAfterConcurrentModification(t *testing.T) {
 func TestUpdatesGiveUpAfterMaxAttempts(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newServiceWithStore()
-	listID, _ := svc.CreateList(ctx, alice, "L", "")
+	listID, _ := svc.CreateList(ctx, alice, text("L"))
 
 	store.conflicts = retry.MaxAttempts
 	if err := svc.UpdateList(ctx, alice, listID, domain.ListPatch{Title: ptr("L2")}); !errors.Is(err, domain.ErrConcurrentUpdate) {
@@ -283,7 +285,7 @@ func TestUpdatesGiveUpAfterMaxAttempts(t *testing.T) {
 
 func TestAddItemValidatesBeforeLookingUpTheList(t *testing.T) {
 	svc := newService()
-	if _, err := svc.AddItem(context.Background(), alice, 999, "", ""); !errors.Is(err, domain.ErrTitleRequired) {
+	if _, err := svc.AddItem(context.Background(), alice, 999, text("")); !errors.Is(err, domain.ErrTitleRequired) {
 		t.Errorf("err = %v, want %v", err, domain.ErrTitleRequired)
 	}
 }
@@ -291,7 +293,7 @@ func TestAddItemValidatesBeforeLookingUpTheList(t *testing.T) {
 func TestRetryStopsWhenContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	svc, store := newServiceWithStore()
-	listID, _ := svc.CreateList(ctx, alice, "L", "")
+	listID, _ := svc.CreateList(ctx, alice, text("L"))
 
 	store.conflicts = 1
 	cancel()

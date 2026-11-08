@@ -50,7 +50,7 @@ func (l *List) Apply(p ListPatch) error {
 		description = *p.Description
 	}
 
-	t, d, err := ParseText(title, description)
+	t, d, err := ParseText(TextInput{Title: title, Description: description})
 	if err != nil {
 		return err
 	}

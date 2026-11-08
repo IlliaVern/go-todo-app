@@ -15,11 +15,11 @@ internal/e2e         end-to-end HTTP tests
 
 Each bounded context has the same packages, and dependencies point inward only:
 
-- `domain`: aggregates with unexported state, typed ids (`OwnerID`, `ListID`, `ItemID`), value objects (`Title`, `Description`, `Name`, `Username`) with validating constructors, `Apply(patch)` methods, domain errors and repository ports. Imports nothing from the project. Aggregate constructors take value objects; use cases parse raw input first (`domain.ParseText`, `domain.NewUsername`).
-- `app`: use cases. Depends on `domain`, ports it declares itself (`PasswordHasher`, `TokenManager`) and `platform/retry`.
+- `domain`: aggregates with unexported state, typed ids (`UserID`, `OwnerID`, `ListID`, `ItemID`), typed credentials (`PasswordHash`, `AccessToken`), value objects (`Title`, `Description`, `Name`, `Username`, `Password`) with validating constructors, `Apply(patch)` methods, domain errors and repository ports. Imports nothing from the project. Aggregate constructors take value objects; use cases parse raw input first (`domain.ParseText`, `domain.NewUsername`).
+- `app`: use cases. Depends on `domain`, ports it declares itself (`PasswordHasher`, `TokenManager`) and `platform/retry`. Raw input with more than one string field arrives as a named struct (`SignUpInput`, `domain.TextInput`), so arguments cannot be swapped.
 - `postgres`: repository adapters on `*pgxpool.Pool`. Private row structs map to domain types through `Restore*`, which trusts stored values.
 - `httpapi`: `net/http` handlers, request/response DTOs and the mapping from domain errors to status codes.
-- Identity-only adapters: `password` (argon2id) and `token` (JWT). They may import `identity/app` for its errors.
+- Identity-only adapters: `password` (argon2id) and `token` (JWT). They may import `identity/domain` and, for its errors, `identity/app`.
 
 Rules:
 
@@ -43,7 +43,7 @@ Rules:
 
 ## HTTP and logging
 
-- Register routes with `httpx.Handle(mux, method, path, h)`, which also serves the trailing-slash form. Read wildcards with `httpx.PathID`; decode bodies with `httpx.DecodeJSON` (1 MiB, single value, unknown fields rejected).
+- Register routes with `httpx.Handle(mux, method, path, h)`, which also serves the trailing-slash form. Read wildcards with `httpx.PathID`; decode bodies with `httpx.DecodeJSON[T]` (1 MiB, single value, unknown fields rejected).
 - Answer through `httpx.JSON`, `httpx.OK`, `httpx.Error`, `httpx.ErrorWithReason` or `httpx.InternalError`; they hand the reason or error to the access log. Handlers do not log requests themselves.
 - The chain is `RequestLogger → Recovery → JSONErrors → ServeMux`. Middleware in between must pass the same `*http.Request` on, or the logged route is lost (`internal/api/api_test.go` checks this). `RequestLogger` writes one `"msg":"request"` line per request (ERROR for 5xx, WARN for 4xx, INFO otherwise, DEBUG for successful health probes) with `request_id` and the matched route.
 - Other logs use `slog.*Context(ctx, ...)` so `request_id` is attached.

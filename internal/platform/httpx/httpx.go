@@ -34,7 +34,7 @@ func Handle(mux *http.ServeMux, method, path string, h http.Handler) {
 	mux.Handle(method+" "+path+"/{$}", h)
 }
 
-func JSON(w http.ResponseWriter, r *http.Request, status int, v any) {
+func JSON[T any](w http.ResponseWriter, r *http.Request, status int, v T) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
@@ -81,16 +81,17 @@ func InternalError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // DecodeJSON decodes the body, which must be a single JSON value with only
-// fields dst declares, into dst. It answers 400 otherwise and 413 for bodies
-// over MaxBodyBytes.
-func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+// fields T declares. It answers 400 otherwise and 413 for bodies over
+// MaxBodyBytes, returning false in both cases.
+func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	// The innermost writer lets net/http close the connection after an
 	// oversized body.
 	r.Body = http.MaxBytesReader(innermost(w), r.Body, MaxBodyBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 
-	err := dec.Decode(dst)
+	var dst T
+	err := dec.Decode(&dst)
 	if err == nil && !errors.Is(dec.Decode(&struct{}{}), io.EOF) {
 		err = errors.New("unexpected data after the JSON value")
 	}
@@ -101,9 +102,9 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	case err != nil:
 		Error(w, r, http.StatusBadRequest, "invalid request body: "+err.Error())
 	default:
-		return true
+		return dst, true
 	}
-	return false
+	return dst, false
 }
 
 func innermost(w http.ResponseWriter) http.ResponseWriter {

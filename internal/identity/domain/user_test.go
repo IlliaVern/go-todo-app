@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -74,7 +75,22 @@ func TestNewUser(t *testing.T) {
 	}
 }
 
-func TestValidatePassword(t *testing.T) {
+func TestPasswordIsRedactedWhenFormatted(t *testing.T) {
+	p, err := domain.NewPassword("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
+		if got := fmt.Sprintf(format, p); strings.Contains(got, "hunter2") {
+			t.Errorf("Sprintf(%q) leaked the password: %q", format, got)
+		}
+	}
+	if p.Reveal() != "hunter2" {
+		t.Errorf("Reveal = %q", p.Reveal())
+	}
+}
+
+func TestNewPassword(t *testing.T) {
 	tests := []struct {
 		name     string
 		password string
@@ -88,7 +104,7 @@ func TestValidatePassword(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := domain.ValidatePassword(tt.password); !errors.Is(err, tt.wantErr) {
+			if _, err := domain.NewPassword(tt.password); !errors.Is(err, tt.wantErr) {
 				t.Errorf("err = %v, want %v", err, tt.wantErr)
 			}
 		})

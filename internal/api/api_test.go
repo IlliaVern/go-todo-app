@@ -44,10 +44,15 @@ func call(h http.Handler, method, path, token, body string) *httptest.ResponseRe
 	return rec
 }
 
-func lastLogLine(t *testing.T, logs *bytes.Buffer) map[string]any {
+type logLine struct {
+	Route     string `json:"route"`
+	RequestID string `json:"request_id"`
+}
+
+func lastLogLine(t *testing.T, logs *bytes.Buffer) logLine {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
-	var line map[string]any
+	var line logLine
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &line); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +76,8 @@ func TestAuthenticatedRequestsLogTheirRoute(t *testing.T) {
 			t.Fatalf("GET %s: %d %s", path, rec.Code, rec.Body)
 		}
 		line := lastLogLine(t, logs)
-		if line["route"] != "/api/items/{id}" || line["request_id"] == "" {
-			t.Errorf("GET %s logged %v, want route /api/items/{id} with a request id", path, line)
+		if line.Route != "/api/items/{id}" || line.RequestID == "" {
+			t.Errorf("GET %s logged %+v, want route /api/items/{id} with a request id", path, line)
 		}
 	}
 }

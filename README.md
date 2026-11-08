@@ -154,7 +154,7 @@ cmd/api/              entry point and `healthcheck` subcommand
 internal/
   api/                composition root: wires everything into one handler
   identity/           users, sign-up/sign-in, access tokens
-    domain/           User aggregate, Name and Username value objects, repository port
+    domain/           User aggregate, Name, Username and Password value objects, repository port
     app/              use cases; hasher and token ports
     password/ token/  argon2id and JWT adapters
     postgres/         repository adapter

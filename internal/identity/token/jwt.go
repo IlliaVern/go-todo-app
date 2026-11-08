@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 )
 
 // MinKeyLength is the minimum HS256 signing key size in bytes.
@@ -14,7 +16,7 @@ const MinKeyLength = 32
 
 type claims struct {
 	jwt.RegisteredClaims
-	UserID int64 `json:"user_id"`
+	UserID domain.UserID `json:"user_id"`
 }
 
 type JWT struct {
@@ -31,7 +33,7 @@ func NewJWT(signingKey string, ttl time.Duration) (*JWT, error) {
 	return &JWT{key: []byte(signingKey), ttl: ttl, now: time.Now}, nil
 }
 
-func (m *JWT) Issue(userID int64) (string, error) {
+func (m *JWT) Issue(userID domain.UserID) (domain.AccessToken, error) {
 	now := m.now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -40,12 +42,13 @@ func (m *JWT) Issue(userID int64) (string, error) {
 		},
 		UserID: userID,
 	})
-	return token.SignedString(m.key)
+	signed, err := token.SignedString(m.key)
+	return domain.AccessToken(signed), err
 }
 
-func (m *JWT) Verify(tokenString string) (int64, error) {
+func (m *JWT) Verify(token domain.AccessToken) (domain.UserID, error) {
 	var c claims
-	_, err := jwt.ParseWithClaims(tokenString, &c,
+	_, err := jwt.ParseWithClaims(string(token), &c,
 		func(*jwt.Token) (any, error) { return m.key, nil },
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithExpirationRequired(),

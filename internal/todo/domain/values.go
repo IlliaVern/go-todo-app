@@ -45,12 +45,18 @@ func NewDescription(s string) (Description, error) {
 
 func (d Description) String() string { return d.value }
 
-func ParseText(title, description string) (Title, Description, error) {
-	t, err := NewTitle(title)
+// TextInput is the unvalidated text of a list or item.
+type TextInput struct {
+	Title       string
+	Description string
+}
+
+func ParseText(in TextInput) (Title, Description, error) {
+	t, err := NewTitle(in.Title)
 	if err != nil {
 		return Title{}, Description{}, err
 	}
-	d, err := NewDescription(description)
+	d, err := NewDescription(in.Description)
 	if err != nil {
 		return Title{}, Description{}, err
 	}

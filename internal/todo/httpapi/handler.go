@@ -60,12 +60,12 @@ func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req createRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	req, ok := httpx.DecodeJSON[createRequest](w, r)
+	if !ok {
 		return
 	}
 
-	id, err := h.svc.CreateList(r.Context(), o, req.Title, req.Description)
+	id, err := h.svc.CreateList(r.Context(), o, domain.TextInput{Title: req.Title, Description: req.Description})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -106,8 +106,8 @@ func (h *Handler) updateList(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req updateListRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	req, ok := httpx.DecodeJSON[updateListRequest](w, r)
+	if !ok {
 		return
 	}
 
@@ -137,12 +137,12 @@ func (h *Handler) createItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req createRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	req, ok := httpx.DecodeJSON[createRequest](w, r)
+	if !ok {
 		return
 	}
 
-	id, err := h.svc.AddItem(r.Context(), o, list, req.Title, req.Description)
+	id, err := h.svc.AddItem(r.Context(), o, list, domain.TextInput{Title: req.Title, Description: req.Description})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -183,8 +183,8 @@ func (h *Handler) updateItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req updateItemRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	req, ok := httpx.DecodeJSON[updateItemRequest](w, r)
+	if !ok {
 		return
 	}
 

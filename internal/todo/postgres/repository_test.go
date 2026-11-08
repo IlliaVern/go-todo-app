@@ -26,7 +26,7 @@ func insertUser(t *testing.T, db *pgxpool.Pool, username string) domain.OwnerID 
 
 func newList(t *testing.T, owner domain.OwnerID, title string) domain.List {
 	t.Helper()
-	ti, d, err := domain.ParseText(title, "")
+	ti, d, err := domain.ParseText(domain.TextInput{Title: title})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func newList(t *testing.T, owner domain.OwnerID, title string) domain.List {
 
 func newItem(t *testing.T, list domain.ListID, title string) domain.Item {
 	t.Helper()
-	ti, d, err := domain.ParseText(title, "")
+	ti, d, err := domain.ParseText(domain.TextInput{Title: title})
 	if err != nil {
 		t.Fatal(err)
 	}

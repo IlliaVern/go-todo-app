@@ -29,7 +29,7 @@ func TestParseText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			title, description, err := domain.ParseText(tt.title, tt.description)
+			title, description, err := domain.ParseText(domain.TextInput{Title: tt.title, Description: tt.description})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -41,7 +41,7 @@ func TestParseText(t *testing.T) {
 }
 
 func TestNewList(t *testing.T) {
-	title, description, _ := domain.ParseText("Groceries", "weekly")
+	title, description, _ := domain.ParseText(domain.TextInput{Title: "Groceries", Description: "weekly"})
 	list := domain.NewList(7, title, description)
 	if list.OwnerID() != 7 || list.Title() != title || list.Description() != description || list.ID() != 0 || list.Version() != 0 {
 		t.Errorf("got %+v", list)

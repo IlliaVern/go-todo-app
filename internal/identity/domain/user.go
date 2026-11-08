@@ -44,13 +44,13 @@ var ErrPasswordHashEmpty = errors.New("password hash is empty")
 // User is an aggregate root: a registered account. It holds the password
 // hash only, never the plain password.
 type User struct {
-	id           int64
+	id           UserID
 	name         Name
 	username     Username
-	passwordHash string
+	passwordHash PasswordHash
 }
 
-func NewUser(name Name, username Username, passwordHash string) (User, error) {
+func NewUser(name Name, username Username, passwordHash PasswordHash) (User, error) {
 	if passwordHash == "" {
 		return User{}, ErrPasswordHashEmpty
 	}
@@ -59,29 +59,19 @@ func NewUser(name Name, username Username, passwordHash string) (User, error) {
 
 // RestoreUser rebuilds a persisted user from trusted storage without
 // re-validating it. Only repositories call it.
-func RestoreUser(id int64, name, username, passwordHash string) User {
+func RestoreUser(id UserID, name, username string, passwordHash PasswordHash) User {
 	return User{id: id, name: Name{name}, username: Username{username}, passwordHash: passwordHash}
 }
 
-func (u User) ID() int64            { return u.id }
-func (u User) Name() Name           { return u.name }
-func (u User) Username() Username   { return u.username }
-func (u User) PasswordHash() string { return u.passwordHash }
-
-func ValidatePassword(password string) error {
-	switch {
-	case password == "":
-		return ErrPasswordRequired
-	case len(password) > MaxPasswordBytes:
-		return ErrPasswordTooLong
-	}
-	return nil
-}
+func (u User) ID() UserID                 { return u.id }
+func (u User) Name() Name                 { return u.name }
+func (u User) Username() Username         { return u.username }
+func (u User) PasswordHash() PasswordHash { return u.passwordHash }
 
 type UserRepository interface {
 	// Add stores a new user and returns its id, or ErrUsernameTaken.
-	Add(ctx context.Context, user User) (int64, error)
+	Add(ctx context.Context, user User) (UserID, error)
 	// ByUsername returns the user or ErrUserNotFound.
 	ByUsername(ctx context.Context, username Username) (User, error)
-	Exists(ctx context.Context, id int64) (bool, error)
+	Exists(ctx context.Context, id UserID) (bool, error)
 }

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 )
 
 const testKey = "0123456789abcdef0123456789abcdef"
@@ -47,14 +49,14 @@ func TestJWTRejects(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		token string
+		token domain.AccessToken
 		at    time.Time
 	}{
 		{name: "expired", token: valid, at: issuedAt.Add(2 * time.Hour)},
 		{name: "signed with another key", token: foreign, at: issuedAt},
-		{name: "no expiry", token: noExpiry, at: issuedAt},
-		{name: "no user id", token: noUser, at: issuedAt},
-		{name: "alg none", token: unsigned, at: issuedAt},
+		{name: "no expiry", token: domain.AccessToken(noExpiry), at: issuedAt},
+		{name: "no user id", token: domain.AccessToken(noUser), at: issuedAt},
+		{name: "alg none", token: domain.AccessToken(unsigned), at: issuedAt},
 		{name: "garbage", token: "a.b.c", at: issuedAt},
 	}
 	for _, tt := range tests {

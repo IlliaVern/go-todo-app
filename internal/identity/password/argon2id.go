@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/IlliaVern/go-todo-app/internal/identity/app"
+	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
 )
 
 // Params are argon2id cost parameters. Memory is in KiB.
@@ -61,7 +62,7 @@ func NewArgon2idWithParams(p Params, maxConcurrent int, maxWait time.Duration) *
 	return &Argon2id{params: p, slots: make(chan struct{}, max(maxConcurrent, 1)), maxWait: maxWait}
 }
 
-func (a *Argon2id) Hash(ctx context.Context, password string) (string, error) {
+func (a *Argon2id) Hash(ctx context.Context, password domain.Password) (domain.PasswordHash, error) {
 	salt := make([]byte, a.params.SaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate salt: %w", err)
@@ -71,14 +72,14 @@ func (a *Argon2id) Hash(ctx context.Context, password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
+	return domain.PasswordHash(fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, a.params.Memory, a.params.Time, a.params.Threads,
-		b64.EncodeToString(salt), b64.EncodeToString(key)), nil
+		b64.EncodeToString(salt), b64.EncodeToString(key))), nil
 }
 
 // Matches verifies password with the parameters stored in encoded.
-func (a *Argon2id) Matches(ctx context.Context, encoded, password string) (bool, error) {
-	p, salt, want, err := decode(encoded)
+func (a *Argon2id) Matches(ctx context.Context, encoded domain.PasswordHash, password domain.Password) (bool, error) {
+	p, salt, want, err := decode(string(encoded))
 	if err != nil {
 		return false, err
 	}
@@ -89,7 +90,7 @@ func (a *Argon2id) Matches(ctx context.Context, encoded, password string) (bool,
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
-func (a *Argon2id) derive(ctx context.Context, password string, salt []byte, p Params) ([]byte, error) {
+func (a *Argon2id) derive(ctx context.Context, password domain.Password, salt []byte, p Params) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -103,7 +104,7 @@ func (a *Argon2id) derive(ctx context.Context, password string, salt []byte, p P
 		return nil, ctx.Err()
 	}
 	defer func() { <-a.slots }()
-	return argon2.IDKey([]byte(password), salt, p.Time, p.Memory, p.Threads, p.KeyLen), nil
+	return argon2.IDKey([]byte(password.Reveal()), salt, p.Time, p.Memory, p.Threads, p.KeyLen), nil
 }
 
 func decode(encoded string) (Params, []byte, []byte, error) {

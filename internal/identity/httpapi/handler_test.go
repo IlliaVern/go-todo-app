@@ -14,17 +14,19 @@ import (
 
 type users struct{}
 
-func (users) Add(context.Context, domain.User) (int64, error) { return 1, nil }
-func (users) Exists(context.Context, int64) (bool, error)     { return true, nil }
+var storedUser = domain.RestoreUser(1, "Ada", "ada", "stored-hash")
+
+func (users) Add(context.Context, domain.User) (domain.UserID, error) { return 1, nil }
+func (users) Exists(context.Context, domain.UserID) (bool, error)     { return true, nil }
 func (users) ByUsername(context.Context, domain.Username) (domain.User, error) {
-	return domain.RestoreUser(1, "Ada", "ada", "stored-hash"), nil
+	return storedUser, nil
 }
 
 // saturatedHasher builds its startup dummy hash, then reports busy like a
 // hasher whose slots are all taken.
 type saturatedHasher struct{ calls int }
 
-func (h *saturatedHasher) Hash(context.Context, string) (string, error) {
+func (h *saturatedHasher) Hash(context.Context, domain.Password) (domain.PasswordHash, error) {
 	h.calls++
 	if h.calls == 1 {
 		return "dummy", nil
@@ -32,14 +34,14 @@ func (h *saturatedHasher) Hash(context.Context, string) (string, error) {
 	return "", app.ErrHasherBusy
 }
 
-func (h *saturatedHasher) Matches(context.Context, string, string) (bool, error) {
+func (h *saturatedHasher) Matches(context.Context, domain.PasswordHash, domain.Password) (bool, error) {
 	return false, app.ErrHasherBusy
 }
 
 type tokens struct{}
 
-func (tokens) Issue(int64) (string, error)  { return "t", nil }
-func (tokens) Verify(string) (int64, error) { return 1, nil }
+func (tokens) Issue(domain.UserID) (domain.AccessToken, error)  { return "t", nil }
+func (tokens) Verify(domain.AccessToken) (domain.UserID, error) { return 1, nil }
 
 func TestBusyHasherAnswers503(t *testing.T) {
 	svc, err := app.NewService(users{}, &saturatedHasher{}, tokens{})

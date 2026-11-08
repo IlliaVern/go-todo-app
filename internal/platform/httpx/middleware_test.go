@@ -47,25 +47,47 @@ func newHandler(t *testing.T) (http.Handler, *bytes.Buffer) {
 	})
 	mux.HandleFunc("GET /panic", func(http.ResponseWriter, *http.Request) { panic("boom") })
 	mux.HandleFunc("POST /echo", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			A string `json:"a"`
-		}
-		if httpx.DecodeJSON(w, r, &body) {
+		if _, ok := httpx.DecodeJSON[echoBody](w, r); ok {
 			httpx.OK(w, r)
 		}
 	})
 	return httpx.RequestLogger(logger, httpx.Recovery(httpx.JSONErrors(mux)), "/healthz"), &buf
 }
 
-func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+type echoBody struct {
+	A string `json:"a"`
+}
+
+type logLine struct {
+	Msg        string   `json:"msg"`
+	Level      string   `json:"level"`
+	Method     string   `json:"method"`
+	Route      string   `json:"route"`
+	Path       string   `json:"path"`
+	Status     int      `json:"status"`
+	Reason     string   `json:"reason"`
+	Error      string   `json:"error"`
+	RequestID  string   `json:"request_id"`
+	Bytes      int      `json:"bytes"`
+	ClientIP   string   `json:"client_ip"`
+	DurationMS *float64 `json:"duration_ms"`
+}
+
+// outcome keeps the fields a table test pins down, dropping per-request noise.
+func (l logLine) outcome() logLine {
+	l.RequestID, l.Bytes, l.ClientIP, l.DurationMS = "", 0, "", nil
+	return l
+}
+
+func logLines(t *testing.T, buf *bytes.Buffer) []logLine {
 	t.Helper()
-	var lines []map[string]any
+	var lines []logLine
 	for raw := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
-		var m map[string]any
-		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		var l logLine
+		if err := json.Unmarshal([]byte(raw), &l); err != nil {
 			t.Fatalf("log line is not JSON: %q", raw)
 		}
-		lines = append(lines, m)
+		lines = append(lines, l)
 	}
 	return lines
 }
@@ -82,28 +104,24 @@ func serve(h http.Handler, method, path, requestID, body string) *httptest.Respo
 
 func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 	tests := []struct {
-		path       string
-		wantStatus int
-		wantLevel  string
-		wantRoute  string
-		wantField  string
-		wantValue  string
+		path string
+		want logLine
 	}{
-		{path: "/things/7", wantStatus: 404, wantLevel: "WARN", wantRoute: "/things/{id}", wantField: "reason", wantValue: "thing not found"},
-		{path: "/token", wantStatus: 401, wantLevel: "WARN", wantRoute: "/token", wantField: "reason", wantValue: "token is expired"},
-		{path: "/failed", wantStatus: 500, wantLevel: "ERROR", wantRoute: "/failed", wantField: "error", wantValue: "db is down"},
-		{path: "/missing", wantStatus: 404, wantLevel: "WARN", wantRoute: "", wantField: "path", wantValue: "/missing"},
-		{path: "/echo", wantStatus: 405, wantLevel: "WARN", wantRoute: "", wantField: "reason", wantValue: "method not allowed"},
-		{path: "/cancelled", wantStatus: 499, wantLevel: "WARN", wantRoute: "/cancelled", wantField: "reason", wantValue: "hash password: context canceled"},
-		{path: "/things/", wantStatus: 200, wantLevel: "INFO", wantRoute: "/things", wantField: "method", wantValue: "GET"},
-		{path: "/healthz", wantStatus: 200, wantLevel: "DEBUG", wantRoute: "/healthz", wantField: "method", wantValue: "GET"},
+		{path: "/things/7", want: logLine{Status: 404, Level: "WARN", Route: "/things/{id}", Reason: "thing not found"}},
+		{path: "/token", want: logLine{Status: 401, Level: "WARN", Route: "/token", Reason: "token is expired"}},
+		{path: "/failed", want: logLine{Status: 500, Level: "ERROR", Route: "/failed", Error: "db is down"}},
+		{path: "/missing", want: logLine{Status: 404, Level: "WARN", Path: "/missing", Reason: "route not found"}},
+		{path: "/echo", want: logLine{Status: 405, Level: "WARN", Path: "/echo", Reason: "method not allowed"}},
+		{path: "/cancelled", want: logLine{Status: 499, Level: "WARN", Route: "/cancelled", Reason: "hash password: context canceled"}},
+		{path: "/things/", want: logLine{Status: 200, Level: "INFO", Route: "/things"}},
+		{path: "/healthz", want: logLine{Status: 200, Level: "DEBUG", Route: "/healthz"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			h, buf := newHandler(t)
 			rec := serve(h, http.MethodGet, tt.path, "", "")
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			if rec.Code != tt.want.Status {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.want.Status)
 			}
 			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 				t.Errorf("Content-Type = %q", ct)
@@ -111,17 +129,16 @@ func TestRequestLoggerWritesOneLinePerRequest(t *testing.T) {
 
 			lines := logLines(t, buf)
 			if len(lines) != 1 {
-				t.Fatalf("got %d log lines, want 1: %v", len(lines), lines)
+				t.Fatalf("got %d log lines, want 1: %+v", len(lines), lines)
 			}
 			line := lines[0]
-			if line["msg"] != "request" || line["level"] != tt.wantLevel || line["status"] != float64(tt.wantStatus) || line["route"] != tt.wantRoute {
-				t.Errorf("line = %v", line)
+			want := tt.want
+			want.Msg, want.Method = "request", http.MethodGet
+			if line.outcome() != want {
+				t.Errorf("line = %+v, want %+v", line.outcome(), want)
 			}
-			if line[tt.wantField] != tt.wantValue {
-				t.Errorf("%s = %v, want %q", tt.wantField, line[tt.wantField], tt.wantValue)
-			}
-			if id := rec.Header().Get(httpx.RequestIDHeader); id == "" || line["request_id"] != id {
-				t.Errorf("request_id = %v, response header = %q", line["request_id"], id)
+			if id := rec.Header().Get(httpx.RequestIDHeader); id == "" || line.RequestID != id {
+				t.Errorf("request_id = %q, response header = %q", line.RequestID, id)
 			}
 		})
 	}
@@ -139,18 +156,16 @@ func TestRequestLoggerPropagatesRequestID(t *testing.T) {
 		t.Fatalf("got %d log lines, want 2", len(lines))
 	}
 	for _, line := range lines {
-		if line["request_id"] != "client-abc-123" {
-			t.Errorf("line %v lacks the request id", line)
+		if line.RequestID != "client-abc-123" {
+			t.Errorf("line %+v lacks the request id", line)
 		}
 	}
 	access := lines[1]
-	if access["level"] != "INFO" || access["route"] != "/ok" || access["method"] != "GET" || access["bytes"] != float64(rec.Body.Len()) {
-		t.Errorf("access line = %v", access)
+	if access.Level != "INFO" || access.Route != "/ok" || access.Method != http.MethodGet || access.Bytes != rec.Body.Len() {
+		t.Errorf("access line = %+v", access)
 	}
-	for _, field := range []string{"duration_ms", "client_ip"} {
-		if _, ok := access[field]; !ok {
-			t.Errorf("access line lacks %s", field)
-		}
+	if access.DurationMS == nil || access.ClientIP == "" {
+		t.Errorf("access line lacks duration_ms or client_ip: %+v", access)
 	}
 }
 
@@ -170,8 +185,8 @@ func TestRecoveryLogsPanicAs500(t *testing.T) {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body)
 	}
 	lines := logLines(t, buf)
-	if len(lines) != 1 || lines[0]["level"] != "ERROR" || !strings.HasPrefix(lines[0]["error"].(string), "panic: boom") {
-		t.Errorf("lines = %v", lines)
+	if len(lines) != 1 || lines[0].Level != "ERROR" || !strings.HasPrefix(lines[0].Error, "panic: boom") {
+		t.Errorf("lines = %+v", lines)
 	}
 }
 

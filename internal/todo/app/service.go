@@ -18,8 +18,8 @@ func NewService(lists domain.ListRepository, items domain.ItemRepository) *Servi
 	return &Service{lists: lists, items: items}
 }
 
-func (s *Service) CreateList(ctx context.Context, owner domain.OwnerID, title, description string) (domain.ListID, error) {
-	t, d, err := domain.ParseText(title, description)
+func (s *Service) CreateList(ctx context.Context, owner domain.OwnerID, text domain.TextInput) (domain.ListID, error) {
+	t, d, err := domain.ParseText(text)
 	if err != nil {
 		return 0, err
 	}
@@ -53,8 +53,8 @@ func (s *Service) DeleteList(ctx context.Context, owner domain.OwnerID, id domai
 }
 
 // AddItem relies on the repository to reject lists the owner does not have.
-func (s *Service) AddItem(ctx context.Context, owner domain.OwnerID, list domain.ListID, title, description string) (domain.ItemID, error) {
-	t, d, err := domain.ParseText(title, description)
+func (s *Service) AddItem(ctx context.Context, owner domain.OwnerID, list domain.ListID, text domain.TextInput) (domain.ItemID, error) {
+	t, d, err := domain.ParseText(text)
 	if err != nil {
 		return 0, err
 	}
