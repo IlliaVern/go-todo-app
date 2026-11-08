@@ -82,7 +82,7 @@ func TestAuthenticatedRequestsLogTheirRoute(t *testing.T) {
 	}
 }
 
-func TestRateLimitCoversAuthRoutesOnly(t *testing.T) {
+func TestRateLimitCoversPasswordRoutesOnly(t *testing.T) {
 	h, _ := newAPI(t, 1)
 
 	body := `{"username":"nobody","password":"x"}`
@@ -92,10 +92,18 @@ func TestRateLimitCoversAuthRoutesOnly(t *testing.T) {
 	if rec := call(h, http.MethodPost, "/auth/sign-in", "", body); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("second sign-in: %d, want 429", rec.Code)
 	}
+	if rec := call(h, http.MethodPost, "/api/users/me/password", "", "{}"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("password change: %d, want 429", rec.Code)
+	}
+	if rec := call(h, http.MethodPatch, "/api/users/me", "", "{}"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("profile update: %d, want 429", rec.Code)
+	}
 
 	for range 3 {
-		if rec := call(h, http.MethodGet, "/api/lists", "", ""); rec.Code != http.StatusUnauthorized {
-			t.Errorf("GET /api/lists without token: %d, want 401 (not rate-limited)", rec.Code)
+		for _, path := range []string{"/api/lists", "/api/users/me"} {
+			if rec := call(h, http.MethodGet, path, "", ""); rec.Code != http.StatusUnauthorized {
+				t.Errorf("GET %s without token: %d, want 401 (not rate-limited)", path, rec.Code)
+			}
 		}
 	}
 }

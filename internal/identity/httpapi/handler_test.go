@@ -14,10 +14,13 @@ import (
 
 type users struct{}
 
-var storedUser = domain.RestoreUser(1, "Ada", "ada", "stored-hash")
+var storedUser = domain.RestoreUser(1, "Ada", "ada", "stored-hash", 1)
 
 func (users) Add(context.Context, domain.User) (domain.UserID, error) { return 1, nil }
 func (users) Exists(context.Context, domain.UserID) (bool, error)     { return true, nil }
+func (users) Get(context.Context, domain.UserID) (domain.User, error) { return storedUser, nil }
+func (users) Update(context.Context, domain.User) error               { return nil }
+func (users) Delete(context.Context, domain.UserID) error             { return nil }
 func (users) ByUsername(context.Context, domain.Username) (domain.User, error) {
 	return storedUser, nil
 }
@@ -52,10 +55,12 @@ func TestBusyHasherAnswers503(t *testing.T) {
 	httpapi.NewHandler(svc).Register(mux, func(h http.Handler) http.Handler { return h })
 
 	for path, body := range map[string]string{
-		"/auth/sign-in": `{"username":"ada","password":"pw"}`,
-		"/auth/sign-up": `{"name":"Ada","username":"ada2","password":"pw"}`,
+		"/auth/sign-in":          `{"username":"ada","password":"pw"}`,
+		"/auth/sign-up":          `{"name":"Ada","username":"ada2","password":"pw"}`,
+		"/api/users/me/password": `{"current_password":"pw","new_password":"pw2"}`,
 	} {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer t")
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {

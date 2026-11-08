@@ -15,7 +15,7 @@ type Config struct {
 	Server
 	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
 	SigningKey string `env:"AUTH_SIGNING_KEY,notEmpty"`
-	// AuthRequestsPerMinute limits sign-up and sign-in requests per client IP.
+	// AuthRequestsPerMinute limits credential and username-changing requests per client IP.
 	AuthRequestsPerMinute int `env:"AUTH_RATE_LIMIT_PER_MINUTE" envDefault:"20"`
 	DB                    DB  `envPrefix:"DB_"`
 }

@@ -149,6 +149,12 @@ type idBody struct{ ID int64 }
 
 type statusBody struct{ Status string }
 
+type profileBody struct {
+	ID       int64
+	Name     string
+	Username string
+}
+
 type listBody struct {
 	ID          int64
 	Title       string
@@ -266,6 +272,54 @@ func TestAPI(t *testing.T) {
 		ghost.expect(send(ghost, "POST", "/api/lists/", map[string]string{"title": "x"}), http.StatusUnauthorized)
 		ghost.expect(ghost.do("GET", "/api/lists/"), http.StatusUnauthorized)
 		ghost.expect(ghost.do("GET", "/api/items/1"), http.StatusUnauthorized)
+		ghost.expect(ghost.do("GET", "/api/users/me"), http.StatusUnauthorized)
+	})
+
+	t.Run("account", func(t *testing.T) {
+		anon := client{t: t, base: base}
+		anon.expect(anon.do("GET", "/api/users/me"), http.StatusUnauthorized)
+		anon.expect(anon.raw("PATCH", "/api/users/me", `{"name":"x"}`), http.StatusUnauthorized)
+		anon.expect(anon.do("DELETE", "/api/users/me"), http.StatusUnauthorized)
+		anon.expect(anon.raw("POST", "/api/users/me/password", `{}`), http.StatusUnauthorized)
+
+		user, other := signUp(t, base), signUp(t, base)
+		me := decode[profileBody](user, user.do("GET", "/api/users/me/"), http.StatusOK)
+		if me.ID <= 0 || me.Name != "Test" || !strings.HasPrefix(me.Username, "user-") {
+			t.Fatalf("profile = %+v", me)
+		}
+		if body := string(user.do("GET", "/api/users/me").body); strings.Contains(body, "argon2") || strings.Contains(body, "password") {
+			t.Errorf("profile exposes credentials: %s", body)
+		}
+
+		user.expect(send(user, "PATCH", "/api/users/me", map[string]string{"name": "Ada"}), http.StatusOK)
+		renamed := strings.ToUpper(me.Username) + "-R"
+		user.expect(send(user, "PATCH", "/api/users/me", map[string]string{"username": renamed}), http.StatusOK)
+		want := profileBody{ID: me.ID, Name: "Ada", Username: strings.ToLower(renamed)}
+		if got := decode[profileBody](user, user.do("GET", "/api/users/me"), http.StatusOK); got != want {
+			t.Errorf("updated profile = %+v, want %+v", got, want)
+		}
+
+		otherName := decode[profileBody](other, other.do("GET", "/api/users/me"), http.StatusOK).Username
+		user.expect(send(user, "PATCH", "/api/users/me", map[string]string{"username": otherName}), http.StatusConflict)
+		user.expect(user.raw("PATCH", "/api/users/me", `{}`), http.StatusBadRequest)
+		user.expect(user.raw("PATCH", "/api/users/me", `{"email":"a@b"}`), http.StatusBadRequest)
+		user.expect(send(user, "PATCH", "/api/users/me", map[string]string{"name": " "}), http.StatusBadRequest)
+
+		const passwordPath = "/api/users/me/password"
+		user.expect(send(user, "POST", passwordPath, map[string]string{"current_password": "wrong", "new_password": "n3w"}), http.StatusForbidden)
+		user.expect(send(user, "POST", passwordPath, map[string]string{"current_password": "s3cret", "new_password": ""}), http.StatusBadRequest)
+		user.expect(send(user, "POST", passwordPath, map[string]string{"current_password": "s3cret", "new_password": "n3w"}), http.StatusOK)
+		anon.expect(send(anon, "POST", "/auth/sign-in", map[string]string{"username": want.Username, "password": "s3cret"}), http.StatusUnauthorized)
+		fresh := signIn(t, base, want.Username, "n3w")
+
+		list := decode[idBody](fresh, send(fresh, "POST", "/api/lists/", map[string]string{"title": "L"}), http.StatusCreated)
+		fresh.expect(fresh.do("DELETE", "/api/users/me"), http.StatusOK)
+		fresh.expect(fresh.do("GET", "/api/users/me"), http.StatusUnauthorized)
+		fresh.expect(fresh.do("GET", fmt.Sprintf("/api/lists/%d", list.ID)), http.StatusUnauthorized)
+		user.expect(user.do("GET", "/api/lists/"), http.StatusUnauthorized)
+		other.expect(other.do("GET", "/api/users/me"), http.StatusOK)
+		anon.expect(send(anon, "POST", "/auth/sign-in", map[string]string{"username": want.Username, "password": "n3w"}), http.StatusUnauthorized)
+		anon.expect(send(anon, "POST", "/auth/sign-up", map[string]string{"name": "Again", "username": want.Username, "password": "x"}), http.StatusCreated)
 	})
 
 	t.Run("lists and items", func(t *testing.T) {

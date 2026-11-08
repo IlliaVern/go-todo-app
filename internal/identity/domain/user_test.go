@@ -75,6 +75,48 @@ func TestNewUser(t *testing.T) {
 	}
 }
 
+func ptr[T any](v T) *T { return &v }
+
+func TestUserApply(t *testing.T) {
+	tests := []struct {
+		name         string
+		patch        domain.ProfilePatch
+		wantName     string
+		wantUsername string
+		wantErr      error
+	}{
+		{name: "name only", patch: domain.ProfilePatch{Name: ptr("Ada L.")}, wantName: "Ada L.", wantUsername: "ada"},
+		{name: "username only", patch: domain.ProfilePatch{Username: ptr("LOVELACE")}, wantName: "Ada", wantUsername: "lovelace"},
+		{name: "empty", wantName: "Ada", wantUsername: "ada", wantErr: domain.ErrEmptyUpdate},
+		{name: "valid name, invalid username", patch: domain.ProfilePatch{Name: ptr("New"), Username: ptr(" x")}, wantName: "Ada", wantUsername: "ada", wantErr: domain.ErrUsernameWhitespace},
+		{name: "blank name", patch: domain.ProfilePatch{Name: ptr(" ")}, wantName: "Ada", wantUsername: "ada", wantErr: domain.ErrNameRequired},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := domain.RestoreUser(1, "Ada", "ada", "hash", 3)
+			if err := user.Apply(tt.patch); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if user.Name().String() != tt.wantName || user.Username().String() != tt.wantUsername {
+				t.Errorf("got %q %q, want %q %q", user.Name(), user.Username(), tt.wantName, tt.wantUsername)
+			}
+			if user.PasswordHash() != "hash" || user.Version() != 3 {
+				t.Errorf("Apply changed credentials or version: %+v", user)
+			}
+		})
+	}
+}
+
+func TestSetPasswordHashRejectsEmptyHash(t *testing.T) {
+	user := domain.RestoreUser(1, "Ada", "ada", "hash", 1)
+	if err := user.SetPasswordHash(""); !errors.Is(err, domain.ErrPasswordHashEmpty) {
+		t.Errorf("err = %v, want %v", err, domain.ErrPasswordHashEmpty)
+	}
+	if user.PasswordHash() != "hash" {
+		t.Errorf("hash = %q, want unchanged", user.PasswordHash())
+	}
+}
+
 func TestPasswordIsRedactedWhenFormatted(t *testing.T) {
 	p, err := domain.NewPassword("hunter2")
 	if err != nil {

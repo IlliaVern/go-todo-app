@@ -13,13 +13,14 @@ import (
 	"github.com/IlliaVern/go-todo-app/internal/platform/postgres"
 )
 
-const userColumns = `id, name, username, password_hash`
+const userColumns = `id, name, username, password_hash, version`
 
 type userRow struct {
 	ID           int64  `db:"id"`
 	Name         string `db:"name"`
 	Username     string `db:"username"`
 	PasswordHash string `db:"password_hash"`
+	Version      int64  `db:"version"`
 }
 
 type UserRepository struct {
@@ -45,6 +46,11 @@ func (r *UserRepository) Add(ctx context.Context, user domain.User) (domain.User
 	return domain.UserID(id), nil
 }
 
+func (r *UserRepository) Get(ctx context.Context, id domain.UserID) (domain.User, error) {
+	rows, _ := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1`, id)
+	return collectUser(rows)
+}
+
 func (r *UserRepository) ByUsername(ctx context.Context, username domain.Username) (domain.User, error) {
 	rows, _ := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE username = $1`, username.String())
 	return collectUser(rows)
@@ -58,7 +64,7 @@ func collectUser(rows pgx.Rows) (domain.User, error) {
 	if err != nil {
 		return domain.User{}, fmt.Errorf("select user: %w", err)
 	}
-	return domain.RestoreUser(domain.UserID(row.ID), row.Name, row.Username, domain.PasswordHash(row.PasswordHash)), nil
+	return domain.RestoreUser(domain.UserID(row.ID), row.Name, row.Username, domain.PasswordHash(row.PasswordHash), row.Version), nil
 }
 
 func (r *UserRepository) Exists(ctx context.Context, id domain.UserID) (bool, error) {
@@ -68,4 +74,36 @@ func (r *UserRepository) Exists(ctx context.Context, id domain.UserID) (bool, er
 		return false, fmt.Errorf("check user exists: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *UserRepository) Update(ctx context.Context, user domain.User) error {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE users SET name = $1, username = $2, password_hash = $3, version = version + 1
+		  WHERE id = $4 AND version = $5`,
+		user.Name().String(), user.Username().String(), string(user.PasswordHash()), user.ID(), user.Version())
+	if postgres.IsUniqueViolation(err) {
+		return domain.ErrUsernameTaken
+	}
+	if err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+	// No row matched: either the user is gone or another writer changed it first.
+	if _, err := r.Get(ctx, user.ID()); err != nil {
+		return err
+	}
+	return domain.ErrConcurrentUpdate
+}
+
+func (r *UserRepository) Delete(ctx context.Context, id domain.UserID) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
 }

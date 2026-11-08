@@ -26,7 +26,7 @@ const tokenTTL = 12 * time.Hour
 
 type Options struct {
 	SigningKey string
-	// AuthRequestsPerMinute limits /auth requests per client.
+	// AuthRequestsPerMinute limits credential and username-changing requests per client.
 	AuthRequestsPerMinute int
 	Logger                *slog.Logger
 }

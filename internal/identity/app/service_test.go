@@ -10,17 +10,20 @@ import (
 
 	"github.com/IlliaVern/go-todo-app/internal/identity/app"
 	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
+	"github.com/IlliaVern/go-todo-app/internal/platform/retry"
 )
 
 // fakeUsers has the same uniqueness and version checks as the PostgreSQL adapter.
 type fakeUsers struct {
 	byID   map[domain.UserID]domain.User
 	nextID domain.UserID
+	// conflicts makes the next N updates fail as if another writer won.
+	conflicts int
 }
 
-func (f *fakeUsers) taken(username domain.Username) bool {
-	for _, u := range f.byID {
-		if u.Username() == username {
+func (f *fakeUsers) taken(username domain.Username, except domain.UserID) bool {
+	for id, u := range f.byID {
+		if id != except && u.Username() == username {
 			return true
 		}
 	}
@@ -28,12 +31,20 @@ func (f *fakeUsers) taken(username domain.Username) bool {
 }
 
 func (f *fakeUsers) Add(_ context.Context, u domain.User) (domain.UserID, error) {
-	if f.taken(u.Username()) {
+	if f.taken(u.Username(), 0) {
 		return 0, domain.ErrUsernameTaken
 	}
 	f.nextID++
-	f.byID[f.nextID] = domain.RestoreUser(f.nextID, u.Name().String(), u.Username().String(), u.PasswordHash())
+	f.byID[f.nextID] = domain.RestoreUser(f.nextID, u.Name().String(), u.Username().String(), u.PasswordHash(), 1)
 	return f.nextID, nil
+}
+
+func (f *fakeUsers) Get(_ context.Context, id domain.UserID) (domain.User, error) {
+	u, ok := f.byID[id]
+	if !ok {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+	return u, nil
 }
 
 func (f *fakeUsers) Exists(_ context.Context, id domain.UserID) (bool, error) {
@@ -48,6 +59,33 @@ func (f *fakeUsers) ByUsername(_ context.Context, username domain.Username) (dom
 		}
 	}
 	return domain.User{}, domain.ErrUserNotFound
+}
+
+func (f *fakeUsers) Update(ctx context.Context, u domain.User) error {
+	stored, err := f.Get(ctx, u.ID())
+	if err != nil {
+		return err
+	}
+	if f.conflicts > 0 {
+		f.conflicts--
+		return domain.ErrConcurrentUpdate
+	}
+	if stored.Version() != u.Version() {
+		return domain.ErrConcurrentUpdate
+	}
+	if f.taken(u.Username(), u.ID()) {
+		return domain.ErrUsernameTaken
+	}
+	f.byID[u.ID()] = domain.RestoreUser(u.ID(), u.Name().String(), u.Username().String(), u.PasswordHash(), u.Version()+1)
+	return nil
+}
+
+func (f *fakeUsers) Delete(_ context.Context, id domain.UserID) error {
+	if _, ok := f.byID[id]; !ok {
+		return domain.ErrUserNotFound
+	}
+	delete(f.byID, id)
+	return nil
 }
 
 // fakeHasher "hashes" by prefixing and records every call.
@@ -83,12 +121,19 @@ func (fakeTokens) Verify(tok domain.AccessToken) (domain.UserID, error) {
 
 func newService(t *testing.T) (*app.Service, *fakeHasher) {
 	t.Helper()
+	svc, hasher, _ := newServiceWithUsers(t)
+	return svc, hasher
+}
+
+func newServiceWithUsers(t *testing.T) (*app.Service, *fakeHasher, *fakeUsers) {
+	t.Helper()
 	hasher := &fakeHasher{}
-	svc, err := app.NewService(&fakeUsers{byID: map[domain.UserID]domain.User{}}, hasher, fakeTokens{})
+	users := &fakeUsers{byID: map[domain.UserID]domain.User{}}
+	svc, err := app.NewService(users, hasher, fakeTokens{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return svc, hasher
+	return svc, hasher, users
 }
 
 func ada(t *testing.T, svc *app.Service) domain.UserID {
@@ -99,6 +144,8 @@ func ada(t *testing.T, svc *app.Service) domain.UserID {
 	}
 	return id
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func TestSignUpAndSignIn(t *testing.T) {
 	ctx := context.Background()
@@ -234,5 +281,132 @@ func TestSignInIsCaseInsensitiveAndBoundsPasswords(t *testing.T) {
 	}
 	if len(hasher.compared) != 0 {
 		t.Errorf("oversized password was hashed %d times, want 0", len(hasher.compared))
+	}
+}
+
+func TestUpdateProfile(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newService(t)
+	id := ada(t, svc)
+	if _, err := svc.SignUp(ctx, app.SignUpInput{Name: "Bob", Username: "bob", Password: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UpdateProfile(ctx, id, domain.ProfilePatch{Name: ptr("Ada L."), Username: ptr("LOVELACE")}); err != nil {
+		t.Fatal(err)
+	}
+	user, err := svc.Profile(ctx, id)
+	if err != nil || user.Name().String() != "Ada L." || user.Username().String() != "lovelace" {
+		t.Fatalf("Profile = %+v, %v", user, err)
+	}
+
+	for _, tt := range []struct {
+		name    string
+		patch   domain.ProfilePatch
+		wantErr error
+	}{
+		{"empty", domain.ProfilePatch{}, domain.ErrEmptyUpdate},
+		{"blank name", domain.ProfilePatch{Name: ptr(" ")}, domain.ErrNameRequired},
+		{"taken username", domain.ProfilePatch{Username: ptr("Bob")}, domain.ErrUsernameTaken},
+	} {
+		if err := svc.UpdateProfile(ctx, id, tt.patch); !errors.Is(err, tt.wantErr) {
+			t.Errorf("%s: err = %v, want %v", tt.name, err, tt.wantErr)
+		}
+	}
+	if err := svc.UpdateProfile(ctx, 999, domain.ProfilePatch{Name: ptr("x")}); !errors.Is(err, domain.ErrUserNotFound) {
+		t.Errorf("unknown user: err = %v, want %v", err, domain.ErrUserNotFound)
+	}
+}
+
+func TestUpdateProfileRetriesAfterConcurrentModification(t *testing.T) {
+	ctx := context.Background()
+	svc, _, users := newServiceWithUsers(t)
+	id := ada(t, svc)
+
+	users.conflicts = retry.MaxAttempts - 1
+	if err := svc.UpdateProfile(ctx, id, domain.ProfilePatch{Name: ptr("Ada L.")}); err != nil {
+		t.Fatalf("after %d conflicts: %v", retry.MaxAttempts-1, err)
+	}
+
+	users.conflicts = retry.MaxAttempts
+	if err := svc.UpdateProfile(ctx, id, domain.ProfilePatch{Name: ptr("Ada X.")}); !errors.Is(err, domain.ErrConcurrentUpdate) {
+		t.Errorf("persistent conflict: err = %v, want %v", err, domain.ErrConcurrentUpdate)
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newService(t)
+	id := ada(t, svc)
+
+	if err := svc.ChangePassword(ctx, id, app.ChangePasswordInput{Current: "s3cret", New: "n3w"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SignIn(ctx, app.SignInInput{Username: "ada", Password: "s3cret"}); !errors.Is(err, app.ErrInvalidCredentials) {
+		t.Errorf("old password: err = %v, want %v", err, app.ErrInvalidCredentials)
+	}
+	if _, err := svc.SignIn(ctx, app.SignInInput{Username: "ada", Password: "n3w"}); err != nil {
+		t.Errorf("new password: %v", err)
+	}
+}
+
+func TestChangePasswordRejections(t *testing.T) {
+	ctx := context.Background()
+	svc, hasher := newService(t)
+	id := ada(t, svc)
+	hasher.hashed = 0
+
+	for _, tt := range []struct {
+		name    string
+		input   app.ChangePasswordInput
+		wantErr error
+	}{
+		{"wrong current", app.ChangePasswordInput{Current: "wrong", New: "n3w"}, app.ErrWrongPassword},
+		{"empty current", app.ChangePasswordInput{New: "n3w"}, app.ErrWrongPassword},
+		{"empty new", app.ChangePasswordInput{Current: "s3cret"}, domain.ErrPasswordRequired},
+		{"oversized new", app.ChangePasswordInput{Current: "s3cret", New: strings.Repeat("p", 1025)}, domain.ErrPasswordTooLong},
+	} {
+		if err := svc.ChangePassword(ctx, id, tt.input); !errors.Is(err, tt.wantErr) {
+			t.Errorf("%s: err = %v, want %v", tt.name, err, tt.wantErr)
+		}
+	}
+	if hasher.hashed != 0 {
+		t.Errorf("hashed a new password %d times despite rejections", hasher.hashed)
+	}
+}
+
+func TestChangePasswordIsNotRetriedOnConflict(t *testing.T) {
+	ctx := context.Background()
+	svc, hasher, users := newServiceWithUsers(t)
+	id := ada(t, svc)
+	hasher.compared = nil
+
+	users.conflicts = 1
+	err := svc.ChangePassword(ctx, id, app.ChangePasswordInput{Current: "s3cret", New: "n3w"})
+	if !errors.Is(err, domain.ErrConcurrentUpdate) {
+		t.Fatalf("err = %v, want %v", err, domain.ErrConcurrentUpdate)
+	}
+	if len(hasher.compared) != 1 {
+		t.Errorf("%d password checks, want 1", len(hasher.compared))
+	}
+}
+
+func TestDeleteAccountInvalidatesTokens(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newService(t)
+	id := ada(t, svc)
+	tok, err := svc.SignIn(ctx, app.SignInInput{Username: "ada", Password: "s3cret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.DeleteAccount(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Authenticate(ctx, tok); !errors.Is(err, app.ErrInvalidToken) {
+		t.Errorf("token after deletion: err = %v, want %v", err, app.ErrInvalidToken)
+	}
+	if err := svc.DeleteAccount(ctx, id); !errors.Is(err, domain.ErrUserNotFound) {
+		t.Errorf("second delete: err = %v, want %v", err, domain.ErrUserNotFound)
 	}
 }

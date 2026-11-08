@@ -1,5 +1,5 @@
 // Package app holds the identity bounded context's use cases: signing up,
-// signing in and authenticating access tokens.
+// signing in, authenticating access tokens and managing one's own account.
 package app
 
 import (
@@ -8,11 +8,13 @@ import (
 	"fmt"
 
 	"github.com/IlliaVern/go-todo-app/internal/identity/domain"
+	"github.com/IlliaVern/go-todo-app/internal/platform/retry"
 )
 
 var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
 	ErrInvalidToken       = errors.New("invalid or expired access token")
+	ErrWrongPassword      = errors.New("current password is incorrect")
 	// ErrHasherBusy is returned by PasswordHasher implementations that shed
 	// load instead of queueing indefinitely.
 	ErrHasherBusy = errors.New("server is busy, retry later")
@@ -146,4 +148,68 @@ func (s *Service) Authenticate(ctx context.Context, token domain.AccessToken) (d
 		return 0, fmt.Errorf("%w: user %d no longer exists", ErrInvalidToken, userID)
 	}
 	return userID, nil
+}
+
+func (s *Service) Profile(ctx context.Context, id domain.UserID) (domain.User, error) {
+	return s.users.Get(ctx, id)
+}
+
+func (s *Service) UpdateProfile(ctx context.Context, id domain.UserID, patch domain.ProfilePatch) error {
+	return retry.OnConflict(ctx, domain.ErrConcurrentUpdate, func() error {
+		user, err := s.users.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := user.Apply(patch); err != nil {
+			return err
+		}
+		return s.users.Update(ctx, user)
+	})
+}
+
+// ChangePasswordInput is the unvalidated password-change form.
+type ChangePasswordInput struct {
+	Current string
+	New     string
+}
+
+// ChangePassword replaces the password after verifying the current one. It is
+// deliberately not retried: losing a version race means the verified hash may
+// no longer be the current one, so the caller must try again.
+func (s *Service) ChangePassword(ctx context.Context, id domain.UserID, in ChangePasswordInput) error {
+	next, err := domain.NewPassword(in.New)
+	if err != nil {
+		return err
+	}
+	current, err := domain.NewPassword(in.Current)
+	if err != nil {
+		return ErrWrongPassword
+	}
+
+	user, err := s.users.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	ok, err := s.hasher.Matches(ctx, user.PasswordHash(), current)
+	if err != nil {
+		return fmt.Errorf("verify password: %w", err)
+	}
+	if !ok {
+		return ErrWrongPassword
+	}
+
+	hash, err := s.hasher.Hash(ctx, next)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	if err := user.SetPasswordHash(hash); err != nil {
+		return err
+	}
+	return s.users.Update(ctx, user)
+}
+
+// DeleteAccount removes the user and, through the database's cascade, all
+// their lists and items. Tokens already issued stop working immediately.
+func (s *Service) DeleteAccount(ctx context.Context, id domain.UserID) error {
+	return s.users.Delete(ctx, id)
 }

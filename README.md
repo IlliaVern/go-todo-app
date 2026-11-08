@@ -30,6 +30,10 @@ All `/api` routes need the header `Authorization: Bearer <token>`.
 |---|---|---|---|
 | `POST` | `/auth/sign-up` | `{"name", "username", "password"}` | 201 `{"id"}` |
 | `POST` | `/auth/sign-in` | `{"username", "password"}` | `{"token"}` (valid for 12 h) |
+| `GET` | `/api/users/me` | | `{"id", "name", "username"}` |
+| `PATCH` | `/api/users/me` | `{"name"?, "username"?}` | `{"status": "ok"}` |
+| `POST` | `/api/users/me/password` | `{"current_password", "new_password"}` | `{"status": "ok"}` |
+| `DELETE` | `/api/users/me` | | `{"status": "ok"}` (deletes the user's lists and items too) |
 | `POST` | `/api/lists` | `{"title", "description"?}` | 201 `{"id"}` |
 | `GET` | `/api/lists` | | `{"data": [list]}` |
 | `GET` | `/api/lists/{id}` | | `list` |
@@ -53,11 +57,12 @@ Errors come back as `{"message": "..."}`:
 |---|---|
 | 400 | Malformed JSON, unknown fields or trailing data, invalid id, failed validation: blank title or name, a field over 255 characters or containing a NUL character, a username with surrounding whitespace, password empty or over 1024 bytes, or an update with no fields |
 | 401 | Missing or invalid token, a token for a user that no longer exists, or wrong username or password |
+| 403 | `current_password` is wrong when changing the password |
 | 404 | The route, list or item doesn't exist, or the list or item belongs to another user |
 | 405 | Wrong method for an existing path; see `Allow` |
-| 409 | Username already taken, or the list or item kept changing under heavy concurrent updates (retry the request) |
+| 409 | Username already taken, or the account, list or item changed under concurrent updates (retry the request) |
 | 413 | Request body over 1 MiB |
-| 429 | More than `AUTH_RATE_LIMIT_PER_MINUTE` sign-up or sign-in requests from one address; see `Retry-After` |
+| 429 | More than `AUTH_RATE_LIMIT_PER_MINUTE` sign-up, sign-in, profile-update or password-change requests from one address; see `Retry-After` |
 | 500 | Unexpected failure. Details are logged, not returned |
 | 503 | Password hashing is saturated; see `Retry-After` |
 
@@ -73,9 +78,9 @@ curl -s localhost:8000/api/lists -H "Authorization: Bearer $TOKEN" -d '{"title":
 
 - **Passwords** are hashed with argon2id at OWASP's minimum parameters (19 MiB, 2 iterations, parallelism 1) and stored as PHC strings.
 - **Hashing is bounded:** at most one hash per CPU runs at once. A request that can't get a slot within 2 s gets 503 instead of queueing, so memory stays capped and latency bounded under load.
-- **Sign-up and sign-in are rate-limited** per client address (IPv6 per /64), 20 requests per minute by default. The limiter is in memory and per process. Proxy headers are not trusted, so every client behind a reverse proxy shares the proxy's address. Docker port publishing behaves the same way: under Compose, all host clients appear as the Docker gateway and share one bucket.
-- **Tokens of deleted users** are rejected on every request: authentication checks that the user still exists.
-- **Concurrent partial updates** use optimistic locking. A server-side update that loses a race is re-applied to the fresh state, up to 5 times with jittered backoff, so concurrent changes to different fields of the same list or item all land. Under heavier contention some requests get 409. Clients editing a stale copy still get last-write-wins, because versions are not exposed as ETags.
+- **Sign-up, sign-in, profile update and password change are rate-limited** together per client address (IPv6 per /64), 20 requests per minute by default, which also throttles probing for taken usernames. The limiter is in memory and per process. Proxy headers are not trusted, so every client behind a reverse proxy shares the proxy's address. Docker port publishing behaves the same way: under Compose, all host clients appear as the Docker gateway and share one bucket.
+- **Tokens of deleted users** are rejected on every request: authentication checks that the user still exists. Changing a password does not revoke tokens already issued; they stay valid until they expire.
+- **Concurrent partial updates** use optimistic locking. A server-side update that loses a race is re-applied to the fresh state, up to 5 times with jittered backoff, so concurrent changes to different fields of the same account, list or item all land. A password change that loses a race answers 409 instead of retrying, because the password it verified may no longer be current. Under heavier contention some requests get 409. Clients editing a stale copy still get last-write-wins, because versions are not exposed as ETags.
 - **The database is the boundary for per-user isolation.** Every query filters by the owner, and CHECK constraints repeat the domain's validation rules.
 
 Large-scale DDoS protection belongs at the edge (CDN or WAF), not in the application.
@@ -124,7 +129,7 @@ Everything is configured through environment variables. `make run` and `make up`
 | `DB_USERNAME` / `DB_DBNAME` / `DB_SSLMODE` | `postgres` / `postgres` / `disable` | PostgreSQL connection |
 | `DB_PASSWORD` | none | PostgreSQL password (required). Generate one with `openssl rand -hex 32`. Avoid `/`, `+` and `=`: Compose puts it in a URL for migrations |
 | `AUTH_SIGNING_KEY` | none | HS256 token signing key, at least 32 bytes (required). Generate one with `openssl rand -base64 48` |
-| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` (`300` in Compose) | Sign-up and sign-in requests allowed per client address per minute |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` (`300` in Compose) | Sign-up, sign-in, profile-update and password-change requests allowed per client address per minute |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 The Compose stack supplies local-only defaults for `DB_PASSWORD` and `AUTH_SIGNING_KEY` when `.env` doesn't set them. Never reuse those values outside your machine. An `AUTH_SIGNING_KEY=` line left empty is passed through, and the app refuses to start.

@@ -8,7 +8,8 @@ CREATE TABLE users
     -- The application stores usernames lowercased; UNIQUE therefore also
     -- rejects case variants.
     username      varchar(255) NOT NULL UNIQUE CHECK (btrim(username) <> ''),
-    password_hash varchar(255) NOT NULL CHECK (password_hash <> '')
+    password_hash varchar(255) NOT NULL CHECK (password_hash <> ''),
+    version       bigint       NOT NULL DEFAULT 1 CHECK (version > 0) -- optimistic concurrency control
 );
 
 -- Cross-context link: the todo context owns lists by identity's user id, and
