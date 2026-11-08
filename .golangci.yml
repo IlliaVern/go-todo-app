@@ -6,18 +6,28 @@ linters:
     - bodyclose
     - contextcheck
     - errorlint
+    - forbidigo
+    - forcetypeassert
     - gocritic
     - gosec
     - misspell
     - noctx
     - nolintlint
+    - revive
     - unconvert
     - unparam
     - usestdlibvars
   settings:
+    forbidigo:
+      forbid:
+        - pattern: ^any$
+          msg: use a concrete type or a type parameter
     nolintlint:
       require-explanation: true
       require-specific: true
+    revive:
+      rules:
+        - name: use-any # turns interface{} into any, which forbidigo then rejects
   exclusions:
     presets:
       - std-error-handling
@@ -25,6 +35,10 @@ linters:
       # Tests build fixtures with ignored errors and fake credentials on purpose.
       - path: _test\.go
         linters: [errcheck, gosec]
+      # A type-parameter constraint is statically typed at every use. RE2 has no
+      # lookahead, so the tail spells out "no further any on this line".
+      - linters: [forbidigo]
+        source: '\[T any\]([^a]|a[^n]|an[^y])*(a|an)?$'
 
 formatters:
   enable:

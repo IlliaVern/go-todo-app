@@ -27,6 +27,7 @@ Rules:
 - The one sanctioned cross-context coupling is the `todo_lists.user_id → users.id` foreign key (`ON DELETE CASCADE`), kept for referential integrity in the shared database.
 - Invariants live on the aggregate and its value objects. A use case loads, calls the domain method, then saves; handlers only decode, call one use case and map the result.
 - Domain types carry no JSON or DB tags; DTOs live in `httpapi`, row structs in `postgres`. Domain error text is domain language; `httpapi` supplies transport wording such as "retry the request".
+- No `any` or `interface{}`: use a concrete type or a type parameter, and check every type assertion. `make lint` enforces this (`forbidigo`, `revive`'s `use-any`, `forcetypeassert`) and allows only `[T any]` constraints. Where a library's signature forces `any`, use a `//nolint:forbidigo` with the reason.
 - Every use case and repository method takes `ctx context.Context` first, except pure CPU work (token signing). Repositories wrap database errors with the failing operation (`insert todo list: ...`).
 - A new operation is a vertical slice: domain method/port → use case → adapter → route, with tests at each layer it touches. New todo repository methods get an owner-scoping check in `internal/todo/postgres/repository_test.go`.
 

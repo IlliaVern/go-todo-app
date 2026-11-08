@@ -49,7 +49,7 @@ func (m *JWT) Issue(userID domain.UserID) (domain.AccessToken, error) {
 func (m *JWT) Verify(token domain.AccessToken) (domain.UserID, error) {
 	var c claims
 	_, err := jwt.ParseWithClaims(string(token), &c,
-		func(*jwt.Token) (any, error) { return m.key, nil },
+		func(*jwt.Token) (any, error) { return m.key, nil }, //nolint:forbidigo // jwt.Keyfunc's required signature
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithExpirationRequired(),
 		jwt.WithTimeFunc(m.now),
